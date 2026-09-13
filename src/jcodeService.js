@@ -197,6 +197,12 @@ class JcodeService {
     };
   }
 
+  async renameSession(sessionId, title) {
+    const client = await this.ensureAttached(sessionId);
+    await client.renameSession(sessionId, title);
+    return { ok: true, id: sessionId, subject: title };
+  }
+
   async deleteSession(sessionId) {
     if (!this.client) await this.connectClient();
     try {

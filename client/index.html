@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#ffc539">
-    <title>Cipher</title>
+    <title>Cipher — Data Harness</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
@@ -16,77 +16,45 @@
         <aside class="sidecar" aria-label="Cipher workspace navigation">
             <div class="sidecar-top">
                 <a class="wordmark" href="#sessions" aria-label="Cipher home">
-                    <span>CIPHER</span>
+                    <span class="wordmark-mark">◈</span><span>CIPHER</span>
                 </a>
                 <p class="project-path" id="project-path">~/workspace</p>
             </div>
 
             <nav class="sidebar-tabs" aria-label="Sidebar sections">
-                <button class="sidebar-tab active" type="button" data-sidebar-tab="sessions" aria-selected="true">SESSIONS</button>
-                <button class="sidebar-tab" type="button" data-sidebar-tab="dashboard" aria-selected="false">DASHBOARD</button>
-                <button class="sidebar-tab" type="button" data-sidebar-tab="workspace" aria-selected="false">WORKSPACE</button>
-                <button class="sidebar-tab" type="button" data-sidebar-tab="agents" aria-selected="false">ROLES</button>
+                <button class="sidebar-tab active" type="button" data-sidebar-tab="sessions" aria-selected="true">TASKS</button>
+                <button class="sidebar-tab" type="button" data-sidebar-tab="dashboard" aria-selected="false">DATA</button>
+                <button class="sidebar-tab" type="button" data-sidebar-tab="workspace" aria-selected="false">FILES</button>
+                <button class="sidebar-tab" type="button" data-sidebar-tab="agents" aria-selected="false">AGENTS</button>
             </nav>
 
             <div class="sidebar-content">
                 <section class="sidebar-view active" id="sidebar-sessions-view" aria-label="Recent agent sessions">
-                    <div class="side-label-row"><span>SESSIONS</span><span class="session-total" id="session-count">0</span></div>
+                    <div class="side-label-row"><span>RECENT TASKS</span><span class="session-total" id="session-count">0</span></div>
                     <div id="session-list" class="session-list" aria-live="polite"></div>
                 </section>
 
-                <section class="sidebar-view" id="sidebar-dashboard-view" aria-label="SOC filters" hidden>
-                    <div class="side-label-row"><span>SOC FILTERS</span><button class="plain-button" type="button" id="reset-filters-btn">RESET</button></div>
-                    <p class="workspace-hint">Filter zero-trust telemetry across identity, perimeter, and endpoint layers.</p>
-                    <div class="sidebar-filter-group">
-                        <label for="dash-filter-department" class="filter-label">DEPARTMENT</label>
-                        <select id="dash-filter-department" class="filter-select">
-                            <option value="All">All Departments</option>
-                        </select>
-                    </div>
-                    <div class="sidebar-filter-group">
-                        <label for="dash-filter-host" class="filter-label">HOSTNAME</label>
-                        <input id="dash-filter-host" type="text" class="filter-input" placeholder="e.g. LPT, VDR, WS...">
-                    </div>
-                    <div class="sidebar-filter-group">
-                        <label for="dash-filter-severity" class="filter-label">EDR SEVERITY</label>
-                        <select id="dash-filter-severity" class="filter-select">
-                            <option value="All">All Severities</option>
-                            <option value="CRITICAL">Critical</option>
-                            <option value="HIGH">High</option>
-                            <option value="MEDIUM">Medium</option>
-                            <option value="LOW">Low</option>
-                        </select>
-                    </div>
-                    <div class="sidebar-filter-group">
-                        <label for="dash-filter-start-date" class="filter-label">START DATE</label>
-                        <input id="dash-filter-start-date" type="date" class="filter-input">
-                    </div>
-                    <div class="sidebar-filter-group">
-                        <label for="dash-filter-end-date" class="filter-label">END DATE</label>
-                        <input id="dash-filter-end-date" type="date" class="filter-input">
-                    </div>
-                    <button type="button" class="side-action side-action-primary" id="apply-filters-btn" style="margin-top: 15px; width: 100%;">APPLY FILTERS</button>
+                <section class="sidebar-view" id="sidebar-dashboard-view" aria-label="Dataset dashboard" hidden>
+                    <div class="side-label-row"><span>DATASET DASHBOARD</span></div>
+                    <p class="workspace-hint">This view is intentionally blank until you attach and upload a dataset in a session. It never uses bundled sample telemetry.</p>
                 </section>
 
                 <section class="sidebar-view" id="sidebar-workspace-view" aria-label="Workspace files" hidden>
                     <div class="side-label-row"><span>WORKSPACE</span><span class="workspace-status" id="tree-status-sidebar"></span></div>
-                    <p class="workspace-hint">Open files in the editor. Expand folders to browse your workspace.</p>
+                            <p class="workspace-hint">Browse the local project and open files in the editor.</p>
                     <div id="workspace-tree-sidebar" class="workspace-tree-sidebar" role="tree" aria-label="Cipher workspace files"></div>
                 </section>
 
                 <section class="sidebar-view" id="sidebar-agents-view" aria-label="Available routing roles" hidden>
                     <div class="side-label-row"><span>ROUTING ROLES</span><span style="font-size: 9px; color: var(--muted);">JCODE ENGINE</span></div>
-                    <p class="workspace-hint">Structured task templates routed and processed end-to-end on JCode.</p>
+                        <p class="workspace-hint">Specialized workflows available for this workspace.</p>
                     <div id="library-list-sidebar" class="library-list-sidebar" aria-live="polite"></div>
                 </section>
             </div>
 
             <div class="sidecar-bottom">
-                <label class="side-action" for="file-upload-input" style="display: flex; align-items: center; justify-content: center; cursor: pointer;" title="Import dataset files (.csv, .xlsx, .json, .parquet) for instant analysis">
-                    <span aria-hidden="true">↑</span> IMPORT
-                    <input id="file-upload-input" type="file" multiple accept=".csv,.tsv,.xlsx,.xls,.json,.parquet" hidden>
-                </label>
-                <button class="side-action side-action-primary" type="button" id="new-session-button"><span aria-hidden="true">+</span> NEW SESSION</button>
+                <input id="file-upload-input" type="file" multiple accept=".csv,.tsv,.xlsx,.xls,.json,.parquet" hidden>
+                <button class="side-action side-action-primary" type="button" id="new-session-button"><span aria-hidden="true">+</span> NEW TASK</button>
             </div>
 
             <div class="sidebar-resizer" aria-label="Resize sidebar"></div>
@@ -99,6 +67,7 @@
 
         <main class="workbench">
             <div class="floating-top-actions">
+                <div class="workspace-chip" title="Current local project"><span class="workspace-chip-dot"></span><span id="active-workspace-label">Data Harness</span><span class="workspace-branch">local</span></div>
                 <button class="glass-action-button" type="button" id="settings-button" aria-label="Open settings" aria-expanded="false" title="Settings">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                 </button>
@@ -142,9 +111,26 @@
             <section class="app-view active" id="sessions-view" aria-labelledby="sessions-heading">
                 <div class="session-canvas">
                     <div class="session-copy">
-                        <h1 id="sessions-heading">What would you like to know?</h1>
+                        <p class="session-eyebrow"><span class="live-mark"></span> CIPHER FOR DATA HARNESS</p>
+                        <h1 id="sessions-heading">What can I help you work on?</h1>
+                        <p class="session-intro">Explore data, inspect files, or ask Cipher to help you move the project forward.</p>
                         <p class="agent-response" id="session-context" hidden></p>
                     </div>
+
+                    <div class="starter-prompts" id="starter-prompts">
+                        <button type="button" data-starter-prompt="Profile the attached dataset and identify data quality issues."><span>↗</span> Profile a dataset</button>
+                        <button type="button" data-starter-prompt="Explain this workspace and recommend the next implementation step."><span>⌘</span> Explore workspace</button>
+                        <button type="button" data-starter-prompt="Review the current project for risks and missing tests."><span>✓</span> Review project</button>
+                    </div>
+
+                    <section class="workspace-diff hidden" id="workspace-diff" aria-label="Workspace changes">
+                        <div class="workspace-diff-header">
+                            <div><span class="workspace-diff-kicker">WORKSPACE CHANGES</span><strong id="workspace-diff-summary">No changes yet</strong></div>
+                            <button class="plain-button" type="button" id="workspace-diff-toggle" aria-expanded="false">SHOW DIFF</button>
+                        </div>
+                        <div class="workspace-diff-files" id="workspace-diff-files"></div>
+                        <pre id="workspace-diff-code" hidden></pre>
+                    </section>
 
                     <div class="stream-card hidden" id="stream-card">
                         <div class="stream-header">
@@ -176,14 +162,20 @@
                     </section>
 
                     <form class="prompt-bar" id="prompt-form">
+                        <div class="composer-toolbar" role="group" aria-label="Task mode">
+                            <button class="composer-mode active" type="button" data-composer-mode="Ask" aria-pressed="true">ASK</button>
+                            <button class="composer-mode" type="button" data-composer-mode="Analyze" aria-pressed="false">ANALYZE</button>
+                            <button class="composer-mode" type="button" data-composer-mode="Review" aria-pressed="false">REVIEW</button>
+                            <span class="composer-context" id="composer-context">LOCAL</span>
+                        </div>
                         <div id="attached-files-preview" class="attached-files-preview hidden"></div>
                         <label class="prompt-attach-btn" for="file-upload-input" title="Attach file to message" aria-label="Attach file">
                             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
                                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
                             </svg>
                         </label>
-                        <label class="sr-only" for="prompt-input">Ask JCode about this workspace</label>
-                        <input id="prompt-input" type="text" autocomplete="off" placeholder="Ask JCode about this workspace">
+                        <label class="sr-only" for="prompt-input">Ask Cipher about this workspace</label>
+                        <input id="prompt-input" type="text" autocomplete="off" placeholder="Ask Cipher about this workspace or attach a dataset">
                         <button class="prompt-cancel hidden" type="button" id="cancel-button" aria-label="Cancel active run" title="Cancel run">
                             <span class="cancel-dot"></span> STOP
                         </button>
@@ -193,6 +185,7 @@
                                 <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
                             </svg>
                         </button>
+                        <p class="composer-hint"><kbd>Enter</kbd> to send <span>·</span> Attach files for context</p>
                     </form>
                 </div>
             </section>
@@ -207,146 +200,50 @@
                 </div>
             </section>
 
-            <!-- GATE 3: Zero-Trust SOC Command Dashboard -->
-            <section class="app-view dashboard-view" id="dashboard-view" aria-label="Zero-Trust SOC Command Dashboard" hidden>
+            <section class="app-view dashboard-view" id="dashboard-view" aria-label="Dataset dashboard" hidden>
                 <div class="dashboard-container">
                     <header class="dashboard-header">
                         <div>
-                            <h1 class="dashboard-title">Zero-Trust Telemetry & SOC Intelligence</h1>
-                            <p class="dashboard-subtitle">Track 2 Command Center &bull; Live Telemetry Ingestion &bull; Certified Risk Formulations</p>
+                            <h1 class="dashboard-title">Dataset dashboard</h1>
+                            <p class="dashboard-subtitle" id="dashboard-subtitle">Upload a dataset from the attachment control to begin.</p>
                         </div>
                         <div class="dashboard-header-actions">
-                            <span class="soc-live-indicator"><span class="pulse-dot"></span> LIVE TELEMETRY</span>
+                            <select id="dashboard-dataset-select" class="dashboard-dataset-select" aria-label="Select uploaded dataset"><option>Loading datasets...</option></select>
                             <button class="plain-button" type="button" id="refresh-dashboard-btn">REFRESH</button>
                         </div>
                     </header>
-
-                    <!-- Top KPI Cards with Surfaced Formulas -->
                     <div class="kpi-grid">
-                        <article class="kpi-card" id="kpi-card-failed-logins">
-                            <div class="kpi-top">
-                                <span class="kpi-label">FAILED-LOGIN RATE</span>
-                                <span class="kpi-badge badge-danger" id="kpi-badge-fails">AUTH RISK</span>
-                            </div>
-                            <div class="kpi-value" id="kpi-failed-login-rate">--</div>
-                            <div class="kpi-formula-wrap">
-                                <span class="formula-tag">FORMULA</span>
-                                <code class="formula-code" id="formula-failed-logins">(failed_logins / total_attempts) &times; 100%</code>
-                            </div>
-                            <p class="kpi-desc" id="kpi-desc-fails">Calculating...</p>
-                        </article>
-
-                        <article class="kpi-card" id="kpi-card-account-risk">
-                            <div class="kpi-top">
-                                <span class="kpi-label">COMPROMISED ACCOUNT RISK</span>
-                                <span class="kpi-badge badge-warning" id="kpi-badge-risk">ELEVATED</span>
-                            </div>
-                            <div class="kpi-value" id="kpi-compromised-risk">--</div>
-                            <div class="kpi-formula-wrap">
-                                <span class="formula-tag">FORMULA</span>
-                                <code class="formula-code" id="formula-account-risk">min(100, base + fails&times;15 + alerts&times;10 + threats&times;20)</code>
-                            </div>
-                            <p class="kpi-desc" id="kpi-desc-risk">Calculating...</p>
-                        </article>
-
-                        <article class="kpi-card" id="kpi-card-insider-threat">
-                            <div class="kpi-top">
-                                <span class="kpi-label">INSIDER-THREAT SCORE</span>
-                                <span class="kpi-badge badge-info" id="kpi-badge-insider">UEBA INDEX</span>
-                            </div>
-                            <div class="kpi-value" id="kpi-insider-score">--</div>
-                            <div class="kpi-formula-wrap">
-                                <span class="formula-tag">FORMULA</span>
-                                <code class="formula-code" id="formula-insider-threat">0.40&times;fails + 0.35&times;edr + 0.25&times;fw</code>
-                            </div>
-                            <p class="kpi-desc" id="kpi-desc-insider">Calculating...</p>
-                        </article>
-
-                        <article class="kpi-card" id="kpi-card-critical-edr">
-                            <div class="kpi-top">
-                                <span class="kpi-label">CRITICAL EDR ALERTS</span>
-                                <span class="kpi-badge badge-danger">SEV-1 TIER</span>
-                            </div>
-                            <div class="kpi-value" id="kpi-critical-alerts">--</div>
-                            <div class="kpi-formula-wrap">
-                                <span class="formula-tag">FORMULA</span>
-                                <code class="formula-code" id="formula-critical-edr">COUNT(*) WHERE severity = 'CRITICAL'</code>
-                            </div>
-                            <p class="kpi-desc" id="kpi-desc-edr">Calculating...</p>
-                        </article>
-
-                        <article class="kpi-card" id="kpi-card-firewall-denies">
-                            <div class="kpi-top">
-                                <span class="kpi-label">PERIMETER POLICY DENIES</span>
-                                <span class="kpi-badge badge-neutral">PERIMETER</span>
-                            </div>
-                            <div class="kpi-value" id="kpi-firewall-denies">--</div>
-                            <div class="kpi-formula-wrap">
-                                <span class="formula-tag">FORMULA</span>
-                                <code class="formula-code" id="formula-firewall-denies">COUNT(*) WHERE action = 'DENY'</code>
-                            </div>
-                            <p class="kpi-desc" id="kpi-desc-fw">Calculating...</p>
-                        </article>
+                        <article class="kpi-card"><div class="kpi-top"><span class="kpi-label">ROWS</span></div><div class="kpi-value" id="kpi-rows">--</div><p class="kpi-desc">Records in the uploaded dataset</p></article>
+                        <article class="kpi-card"><div class="kpi-top"><span class="kpi-label">COLUMNS</span></div><div class="kpi-value" id="kpi-columns">--</div><p class="kpi-desc">Detected fields</p></article>
+                        <article class="kpi-card"><div class="kpi-top"><span class="kpi-label">MISSING VALUES</span></div><div class="kpi-value" id="kpi-missing">--</div><p class="kpi-desc">Blank or null values</p></article>
+                        <article class="kpi-card"><div class="kpi-top"><span class="kpi-label">NUMERIC FIELDS</span></div><div class="kpi-value" id="kpi-numeric">--</div><p class="kpi-desc">Fields available for quantitative analysis</p></article>
                     </div>
-
-                    <!-- Middle Trend Lines & Live Interactive Charts -->
                     <div class="dashboard-charts-grid">
                         <div class="dashboard-chart-card chart-span-2">
-                            <div class="chart-header">
-                                <h3>Failed Login Trend by Department</h3>
-                                <span class="chart-tag">PLOTLY LIVE</span>
-                            </div>
-                            <div id="chart-login-trend" class="dash-plot-box"></div>
+                            <div class="chart-header"><h3 id="chart-numeric-title">Numeric distribution</h3><span class="chart-tag">UPLOADED DATA</span></div>
+                            <div id="chart-numeric" class="dash-plot-box"></div>
                         </div>
-
                         <div class="dashboard-chart-card">
-                            <div class="chart-header">
-                                <h3>EDR Alert Severity Triage</h3>
-                                <span class="chart-tag">SEVERITY RATIO</span>
-                            </div>
-                            <div id="chart-edr-severity" class="dash-plot-box"></div>
-                        </div>
-
-                        <div class="dashboard-chart-card chart-span-3">
-                            <div class="chart-header">
-                                <h3>Firewall Policy Enforcement by Protocol</h3>
-                                <span class="chart-tag">NETWORK INGRESS/EGRESS</span>
-                            </div>
-                            <div id="chart-firewall-proto" class="dash-plot-box"></div>
+                            <div class="chart-header"><h3 id="chart-category-title">Top categories</h3><span class="chart-tag">UPLOADED DATA</span></div>
+                            <div id="chart-category" class="dash-plot-box"></div>
                         </div>
                     </div>
-
-                    <!-- Bottom Live Detail Table -->
                     <div class="dashboard-table-card">
                         <div class="table-card-header">
                             <div class="table-title-row">
-                                <h3>Live Threat Telemetry Audit Records</h3>
+                                <h3>Dataset preview</h3>
                                 <span class="record-counter" id="record-count-badge">0 records</span>
                             </div>
-                            <input id="table-search-input" type="text" class="table-search" placeholder="Search filtered records (user, host, dept)...">
+                            <input id="table-search-input" type="text" class="table-search" placeholder="Search uploaded records...">
                         </div>
                         <div class="table-responsive">
-                            <table class="detail-table" id="telemetry-table">
-                                <thead>
-                                    <tr>
-                                        <th>TIMESTAMP</th>
-                                        <th>USER ID</th>
-                                        <th>HOSTNAME</th>
-                                        <th>DEPARTMENT</th>
-                                        <th>EVENT TYPE</th>
-                                        <th>RISK SCORE</th>
-                                        <th>STATUS</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="telemetry-table-body">
-                                    <tr><td colspan="7" class="table-loading">Loading telemetry records...</td></tr>
-                                </tbody>
-                            </table>
+                            <table class="detail-table" id="telemetry-table"><thead id="telemetry-table-head"></thead><tbody id="telemetry-table-body"><tr><td class="table-loading">Upload a dataset to view its records.</td></tr></tbody></table>
                         </div>
                     </div>
                 </div>
             </section>
         </main>
+        <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
     </div>
     <script src="app.js"></script>
 </body>

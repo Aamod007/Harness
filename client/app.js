@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tools: new Map(), // call_id -> { name, input, output, error, status }
         dashboardData: null,
         attachedFiles: [],
+        composerMode: 'Ask',
     };
 
     // DOM Elements
@@ -67,7 +68,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const apiKeyInput = $('#api-key-input');
     const saveApiKeyButton = $('#save-api-key-button');
     const fileUploadInput = $('#file-upload-input');
+    const composerContext = $('#composer-context');
     const attachedFilesPreview = $('#attached-files-preview');
+    const starterPrompts = $('#starter-prompts');
+    const toastRegion = $('#toast-region');
+    const workspaceDiff = $('#workspace-diff');
+    const workspaceDiffSummary = $('#workspace-diff-summary');
+    const workspaceDiffFiles = $('#workspace-diff-files');
+    const workspaceDiffCode = $('#workspace-diff-code');
+    const workspaceDiffToggle = $('#workspace-diff-toggle');
     const sessionsView = $('#sessions-view');
     const workspaceEditor = $('#workspace-editor');
     const dashboardView = $('#dashboard-view');
@@ -79,6 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const applyFiltersBtn = $('#apply-filters-btn');
     const resetFiltersBtn = $('#reset-filters-btn');
     const refreshDashboardBtn = $('#refresh-dashboard-btn');
+    const dashboardDatasetSelect = $('#dashboard-dataset-select');
     const tableSearchInput = $('#table-search-input');
     const telemetryTableBody = $('#telemetry-table-body');
     const recordCountBadge = $('#record-count-badge');
@@ -200,9 +210,45 @@ document.addEventListener('DOMContentLoaded', () => {
         return response.json();
     }
 
+    function showToast(message, tone = 'error') {
+        if (!toastRegion || !message) return;
+        const toast = document.createElement('article');
+        toast.className = `toast toast-${tone}`;
+        toast.innerHTML = `<span class="toast-icon">${tone === 'error' ? '!' : '✓'}</span><p>${esc(message)}</p><button type="button" aria-label="Dismiss notification">×</button>`;
+        toastRegion.append(toast);
+        const dismiss = () => {
+            toast.classList.add('toast-leaving');
+            window.setTimeout(() => toast.remove(), 180);
+        };
+        toast.querySelector('button').addEventListener('click', dismiss);
+        window.setTimeout(dismiss, 6500);
+    }
+
+    function setChatStarted(started) {
+        if (starterPrompts) starterPrompts.hidden = Boolean(started);
+        document.body.classList.toggle('chat-started', Boolean(started));
+    }
+
     function setStatus(text, ready = false) {
         sessionContext.textContent = text;
         sessionContext.hidden = !text;
+        if (/\b(error|failed|could not|cancel failed|payload too large)\b/i.test(text || '')) showToast(text);
+    }
+
+    function setComposerMode(mode) {
+        state.composerMode = mode;
+        $$('.composer-mode').forEach(button => {
+            const active = button.dataset.composerMode === mode;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-pressed', String(active));
+        });
+        const placeholders = {
+            Ask: 'Ask about this workspace or attach a dataset',
+            Analyze: 'Describe the analysis you want to run on the attached dataset',
+            Review: 'Ask for a review of the workspace, data, or current result',
+        };
+        promptInput.placeholder = placeholders[mode] || placeholders.Ask;
+        if (composerContext) composerContext.textContent = mode.toUpperCase();
     }
 
     function switchSidebarTab(tab) {
@@ -248,6 +294,51 @@ document.addEventListener('DOMContentLoaded', () => {
         return raw;
     }
 
+    function titleFromPrompt(prompt, fallback = 'New Session') {
+        const clean = String(prompt || '')
+            .replace(/^\[[^\]]+\]\s*/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return clean ? short(clean, 62) : fallback;
+    }
+
+    async function renameSessionFromPrompt(prompt, fallback) {
+        if (!state.selectedSession) return;
+        const selected = state.sessions.find(item => item.id === state.selectedSession);
+        if (selected && cleanSessionTitle(selected.subject) !== 'New Session') return;
+        const title = titleFromPrompt(prompt, fallback);
+        if (title === 'New Session') return;
+        sessionHeading.textContent = title;
+        state.sessions = state.sessions.map(item => item.id === state.selectedSession ? { ...item, subject: title } : item);
+        renderSessions();
+        try {
+            await api('POST', `/api/sessions/${encodeURIComponent(state.selectedSession)}/title`, { title });
+        } catch (_) {
+            // The local title remains useful if a remote runtime cannot rename its session.
+        }
+    }
+
+    async function loadWorkspaceDiff() {
+        if (!workspaceDiff) return;
+        try {
+            const diff = await api('GET', '/api/workspace/diff');
+            const files = diff.files || [];
+            if (!diff.available || files.length === 0) {
+                workspaceDiff.classList.add('hidden');
+                return;
+            }
+            workspaceDiff.classList.remove('hidden');
+            workspaceDiffSummary.textContent = `${files.length} changed ${files.length === 1 ? 'file' : 'files'}`;
+            workspaceDiffFiles.innerHTML = files.slice(0, 6).map(file => `<span>${esc(file)}</span>`).join('');
+            if (files.length > 6) workspaceDiffFiles.innerHTML += `<span>+${files.length - 6} more</span>`;
+            workspaceDiffCode.textContent = diff.diff || 'No textual diff is available.';
+            workspaceDiffCode.hidden = workspaceDiffToggle.getAttribute('aria-expanded') !== 'true';
+            workspaceDiffToggle.textContent = workspaceDiffCode.hidden ? 'SHOW DIFF' : 'HIDE DIFF';
+        } catch (_) {
+            workspaceDiff.classList.add('hidden');
+        }
+    }
+
     function renderAttachedFilesPreview() {
         const previewEl = $('#attached-files-preview');
         if (!previewEl) return;
@@ -282,7 +373,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessions = [...state.sessions].reverse();
         sessionCount.textContent = sessions.length;
         if (!sessions.length) {
-            sessionList.innerHTML = '<p class="session-list-empty">JCode sessions in this workspace appear here.</p>';
+            sessionList.innerHTML = '<p class="session-list-empty">Your Cipher tasks will appear here.</p>';
             return;
         }
         sessionList.innerHTML = sessions.map(item => `
@@ -319,10 +410,10 @@ document.addEventListener('DOMContentLoaded', () => {
             await loadSessions();
             selectSession(session.id);
             sessionHeading.textContent = 'New Session';
-            setStatus('Ready — Ask JCode a question, dispatch a data role, or import a dataset.');
+            setStatus('Ready — ask Cipher a question, inspect the project, or attach a dataset.');
             promptInput.focus();
         } catch (err) {
-            window.alert(`Could not create session: ${err.message}`);
+            showToast(`Could not create session: ${err.message}`);
         } finally {
             hideLoading();
         }
@@ -343,7 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderSessions();
             }
         } catch (error) {
-            window.alert(`Could not archive session: ${error.message}`);
+            showToast(`Could not archive session: ${error.message}`);
         } finally {
             hideLoading();
         }
@@ -351,8 +442,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetStage() {
         state.selectedSession = null;
-        sessionHeading.textContent = 'What would you like to know?';
+        sessionHeading.textContent = 'What can I help you work on?';
         setStatus('');
+        setChatStarted(false);
         clearStreamOutput();
         renderSessions();
     }
@@ -543,18 +635,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleJcodeEvent(event) {
         const ev = event.ev;
+        const activeOutput = () => streamText.querySelector('.agent-run-output') || streamText;
 
         if (ev === 'agent_ready') {
             streamCard.classList.remove('hidden');
             streamBadge.textContent = 'READY';
             streamBadge.classList.add('idle');
-            streamText.innerHTML = formatAgentOutputHtml(event.name || event.agentId || 'Agent', event.result);
+            activeOutput().innerHTML = formatAgentOutputHtml(event.name || event.agentId || 'Agent', event.result);
             return;
         }
 
         if (ev === 'text_delta') {
             streamCard.classList.remove('hidden');
-            streamText.textContent += event.text;
+            activeOutput().textContent += event.text;
             return;
         }
 
@@ -635,6 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setGeneratingState(false);
             setStatus('Ready');
             loadSessions();
+            loadWorkspaceDiff();
             return;
         }
 
@@ -642,7 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setGeneratingState(false);
             setStatus(`Error: ${event.message}`);
             streamCard.classList.remove('hidden');
-            streamText.innerHTML += `\n<div style="margin-top: 10px; padding: 10px; background: rgba(225, 29, 72, 0.08); border-left: 3px solid #e11d48; border-radius: 4px; color: #e11d48;"><strong>Harness Notice:</strong> ${esc(event.message)}</div>`;
+            activeOutput().innerHTML += `\n<div style="margin-top: 10px; padding: 10px; background: rgba(225, 29, 72, 0.08); border-left: 3px solid #e11d48; border-radius: 4px; color: #e11d48;"><strong>Harness Notice:</strong> ${esc(event.message)}</div>`;
             return;
         }
 
@@ -715,9 +809,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (history && history.messages && history.messages.length) {
                 renderHistory(history.messages);
+                setChatStarted(true);
             } else {
-                setStatus('Ready — Ask JCode a question, dispatch a data role, or import a dataset.');
+                setStatus('Ready — ask Cipher a question, inspect the project, or attach a dataset.');
+                setChatStarted(false);
             }
+            loadWorkspaceDiff();
         } catch (err) {
             setStatus(`Could not load session details: ${err.message}`);
         } finally {
@@ -727,13 +824,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderHistory(messages) {
         streamCard.classList.remove('hidden');
+        setChatStarted(messages.length > 0);
         setGeneratingState(false);
         const renderedText = messages.map(msg => {
-            const role = msg.role ? msg.role.toUpperCase() : 'MSG';
+            const role = String(msg.role || 'assistant').toLowerCase();
             const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-            return `### ${role}:\n${content}\n`;
-        }).join('\n');
-        streamText.textContent = renderedText;
+            const isUser = role === 'user';
+            return `<article class="transcript-message ${isUser ? 'transcript-message-user' : 'transcript-message-assistant'}">
+                <div class="transcript-avatar">${isUser ? 'YOU' : 'CIPHER'}</div>
+                <div class="transcript-content">${isUser ? esc(content) : formatAgentOutputHtml('Cipher', content)}</div>
+            </article>`;
+        }).join('');
+        streamText.innerHTML = renderedText;
         setStatus('Ready');
     }
 
@@ -741,6 +843,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = prompt.trim();
         const activeFiles = [...(state.attachedFiles || [])];
         if (!text && activeFiles.length === 0) return;
+        setChatStarted(true);
 
         state.attachedFiles = [];
         renderAttachedFilesPreview();
@@ -753,6 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         sessionHeading.textContent = cleanSessionTitle(text || activeFiles[0]?.name);
+        await renameSessionFromPrompt(text, activeFiles[0]?.name);
         clearStreamOutput();
         streamCard.classList.remove('hidden');
         streamModel.textContent = state.currentModel || '';
@@ -780,11 +884,11 @@ document.addEventListener('DOMContentLoaded', () => {
             userMessageHtml = `<div class="user-message-container"><div class="user-message-bubble">${esc(text)}</div></div>`;
         }
 
-        streamText.innerHTML = userMessageHtml;
+        streamText.innerHTML = `${userMessageHtml}<div class="agent-run-output" aria-live="polite"></div>`;
 
-        let fullPrompt = text;
+        let fullPrompt = text ? `[${state.composerMode} mode] ${text}` : `[${state.composerMode} mode] Review the attached files.`;
         if (activeFiles.length) {
-            fullPrompt = `[Attached Files: ${activeFiles.map(f => f.name).join(', ')}]\n${text}`;
+            fullPrompt = `[Attached Files: ${activeFiles.map(f => f.name).join(', ')}]\n${fullPrompt}`;
         }
 
         try {
@@ -799,14 +903,17 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (res && res.result) {
                 streamBadge.textContent = 'READY';
                 streamBadge.classList.add('idle');
-                streamText.innerHTML = formatAgentOutputHtml(res.agentName || 'Agent Execution', res.result);
+                streamText.querySelector('.agent-run-output').innerHTML = formatAgentOutputHtml(res.agentName || 'Agent Execution', res.result);
                 setGeneratingState(false);
                 setStatus('Ready');
             }
+            loadWorkspaceDiff();
         } catch (error) {
             setGeneratingState(false);
             setStatus(`Dispatch error: ${error.message}`);
-            streamText.textContent = `Error sending prompt: ${error.message}`;
+            const output = streamText.querySelector('.agent-run-output');
+            if (output) output.textContent = `Error sending prompt: ${error.message}`;
+            else streamText.textContent = `Error sending prompt: ${error.message}`;
         }
     }
 
@@ -842,7 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
             streamModel.textContent = model;
             setStatus(`Model switched to ${model}`);
         } catch (err) {
-            window.alert(`Could not switch model: ${err.message}`);
+            showToast(`Could not switch model: ${err.message}`);
         } finally {
             hideLoading();
         }
@@ -851,15 +958,15 @@ document.addEventListener('DOMContentLoaded', () => {
     async function saveApiKey() {
         const provider = providerInput.value.trim() || 'openai-compatible';
         const apiKey = apiKeyInput.value.trim();
-        if (!apiKey) return window.alert('Please enter an API key.');
+        if (!apiKey) return showToast('Please enter an API key.');
         showLoading();
         try {
             await api('POST', '/api/config/api-key', { provider, apiKey });
             apiKeyInput.value = '';
-            window.alert(`API Key saved for ${provider}!`);
+            showToast(`API key saved for ${provider}.`, 'success');
             await refreshStatus();
         } catch (err) {
-            window.alert(`Failed saving key: ${err.message}`);
+            showToast(`Failed saving key: ${err.message}`);
         } finally {
             hideLoading();
         }
@@ -986,6 +1093,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (state.activeFile === path) activateWorkspaceFile(path);
         } catch (error) {
             editorPanel.innerHTML = `<div class="editor-empty-state"><h2>Could not open file</h2><p>${esc(error.message)}</p></div>`;
+            showToast(`Could not open file: ${error.message}`);
         } finally {
             state.loadingFiles.delete(path);
             hideLoading();
@@ -999,6 +1107,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderWorkspaceSidebar();
         } catch (error) {
             $('#workspace-tree-sidebar').innerHTML = `<p class="session-list-empty">${esc(error.message)}</p>`;
+            showToast(`Could not load workspace: ${error.message}`);
         } finally {
             hideLoading();
         }
@@ -1052,6 +1161,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     streamText.innerHTML = formatAgentOutputHtml(agentName, res.result);
                 } catch (err) {
                     streamText.innerHTML = `<p style="color: #f85149;">Error on JCode processing ${esc(agentName)}: ${esc(err.message)}</p>`;
+                    showToast(`Cipher could not run ${agentName}: ${err.message}`);
                 } finally {
                     hideLoading();
                 }
@@ -1109,7 +1219,7 @@ document.addEventListener('DOMContentLoaded', () => {
             resetStage();
             setStatus('All sessions cleared.');
         } catch (error) {
-            window.alert(`Could not clear sessions: ${error.message}`);
+            showToast(`Could not clear sessions: ${error.message}`);
         } finally {
             hideLoading();
         }
@@ -1174,78 +1284,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderDashboard(data) {
         if (!data) return;
-        const kpis = data.kpis;
-        if (kpis) {
-            if (kpis.failed_login_rate && $('#kpi-failed-login-rate')) {
-                $('#kpi-failed-login-rate').textContent = kpis.failed_login_rate.value;
-                $('#formula-failed-logins').textContent = kpis.failed_login_rate.formula;
-                $('#kpi-desc-fails').textContent = `${kpis.failed_login_rate.failed_logins.toLocaleString()} failed of ${kpis.failed_login_rate.total_attempts.toLocaleString()} authentication events`;
-            }
-            if (kpis.compromised_account_risk && $('#kpi-compromised-risk')) {
-                $('#kpi-compromised-risk').textContent = kpis.compromised_account_risk.value;
-                $('#formula-account-risk').textContent = kpis.compromised_account_risk.formula;
-                $('#kpi-desc-risk').textContent = `${kpis.compromised_account_risk.high_risk_count} accounts flagged above 60.0 risk threshold`;
-            }
-            if (kpis.insider_threat_score && $('#kpi-insider-score')) {
-                $('#kpi-insider-score').textContent = kpis.insider_threat_score.value;
-                $('#formula-insider-threat').textContent = kpis.insider_threat_score.formula;
-                $('#kpi-desc-insider').textContent = `Composite weighted index across multi-domain telemetry`;
-            }
-            if (kpis.critical_alerts && $('#kpi-critical-alerts')) {
-                $('#kpi-critical-alerts').textContent = kpis.critical_alerts.value;
-                $('#formula-critical-edr').textContent = kpis.critical_alerts.formula;
-                $('#kpi-desc-edr').textContent = `${kpis.critical_alerts.total_edr.toLocaleString()} total alerts (${kpis.critical_alerts.impossible_resolutions} impossible resolution)`;
-            }
-            if (kpis.firewall_denies && $('#kpi-firewall-denies')) {
-                $('#kpi-firewall-denies').textContent = kpis.firewall_denies.value;
-                $('#formula-firewall-denies').textContent = kpis.firewall_denies.formula;
-                $('#kpi-desc-fw').textContent = `${kpis.firewall_denies.threat_flags} active threat flags across ${kpis.firewall_denies.total_packets.toLocaleString()} packets`;
-            }
+        const empty = data.status !== 'success';
+        $('#dashboard-subtitle').textContent = empty ? (data.message || 'Upload a dataset to begin.') : `Source: ${data.dataset_names.join(', ')}`;
+        if (!empty && dashboardDatasetSelect) {
+            const selected = data.dataset_names[0];
+            dashboardDatasetSelect.innerHTML = data.available_datasets.map(name => `<option value="${esc(name)}" ${name === selected ? 'selected' : ''}>${esc(name)}</option>`).join('');
         }
-
-        if (data.filter_options && filterDept && filterDept.options.length <= 1) {
-            filterDept.innerHTML = data.filter_options.departments.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
-        }
-
-        if (window.Plotly && data.charts) {
+        $('#kpi-rows').textContent = empty ? '--' : fmt(data.rows);
+        $('#kpi-columns').textContent = empty ? '--' : fmt(data.columns.length);
+        $('#kpi-missing').textContent = empty ? '--' : fmt(data.missing);
+        $('#kpi-numeric').textContent = empty ? '--' : fmt(data.numeric_columns);
+        if (!empty && window.Plotly && data.charts) {
             const config = { responsive: true, displayModeBar: false };
-            if (data.charts.login_trend && $('#chart-login-trend')) {
-                Plotly.newPlot('chart-login-trend', data.charts.login_trend.data, data.charts.login_trend.layout, config);
+            if ($('#chart-numeric')) {
+                Plotly.newPlot('chart-numeric', data.charts.numeric.data, data.charts.numeric.layout, config);
             }
-            if (data.charts.firewall_actions && $('#chart-firewall-proto')) {
-                Plotly.newPlot('chart-firewall-proto', data.charts.firewall_actions.data, data.charts.firewall_actions.layout, config);
-            }
-            if (data.charts.severity_dist && $('#chart-edr-severity')) {
-                Plotly.newPlot('chart-edr-severity', data.charts.severity_dist.data, data.charts.severity_dist.layout, config);
+            if ($('#chart-category')) {
+                Plotly.newPlot('chart-category', data.charts.category.data, data.charts.category.layout, config);
             }
         }
 
-        currentRecords = data.records || [];
-        renderTableRecords(currentRecords);
+        currentRecords = empty ? [] : data.records || [];
+        renderTableRecords(currentRecords, empty ? [] : data.columns);
     }
 
-    function renderTableRecords(records) {
+    function renderTableRecords(records, columns = state.dashboardData?.columns || []) {
         if (!telemetryTableBody) return;
         if (recordCountBadge) recordCountBadge.textContent = `${records.length} records`;
+        const head = $('#telemetry-table-head');
+        if (head) head.innerHTML = columns.length ? `<tr>${columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr>` : '';
         if (!records.length) {
-            telemetryTableBody.innerHTML = '<tr><td colspan="7" class="table-loading">No telemetry events match active filters.</td></tr>';
+            telemetryTableBody.innerHTML = `<tr><td colspan="${Math.max(1, columns.length)}" class="table-loading">Upload a dataset to view its records.</td></tr>`;
             return;
         }
         telemetryTableBody.innerHTML = records.map(r => `
             <tr>
-                <td>${esc(r.timestamp)}</td>
-                <td><strong>${esc(r.user_id)}</strong></td>
-                <td>${esc(r.hostname)}</td>
-                <td>${esc(r.department)}</td>
-                <td><span class="${r.event_or_action === 'login_failed' ? 'kpi-badge badge-danger' : 'kpi-badge badge-neutral'}">${esc(r.event_or_action)}</span></td>
-                <td>${r.risk_score != null ? esc(r.risk_score) : '-'}</td>
-                <td><span class="kpi-badge badge-info">${esc(r.status)}</span></td>
+                ${columns.map(c => `<td>${esc(r[c] ?? '-')}</td>`).join('')}
             </tr>
         `).join('');
     }
 
     if (applyFiltersBtn) applyFiltersBtn.addEventListener('click', () => loadDashboard(getFilterValues()));
-    if (refreshDashboardBtn) refreshDashboardBtn.addEventListener('click', () => loadDashboard(getFilterValues()));
+    if (refreshDashboardBtn) refreshDashboardBtn.addEventListener('click', () => loadDashboard({ dataset: dashboardDatasetSelect?.value }));
+    if (dashboardDatasetSelect) dashboardDatasetSelect.addEventListener('change', () => loadDashboard({ dataset: dashboardDatasetSelect.value }));
     if (resetFiltersBtn) resetFiltersBtn.addEventListener('click', () => {
         if (filterDept) filterDept.value = 'All';
         if (filterHost) filterHost.value = '';
@@ -1281,13 +1362,13 @@ document.addEventListener('DOMContentLoaded', () => {
         setStatus('Executing full data rescue pipeline (pipeline.py)...');
         try {
             await api('POST', '/api/pipeline/run');
-            window.alert('Pipeline executed successfully! 100% rows rescued and DuckDB updated.');
+            showToast('Pipeline executed successfully. DuckDB is updated.', 'success');
             if (state.activeSidebarTab === 'dashboard') {
                 loadDashboard(getFilterValues());
             }
             await loadWorkspace();
         } catch (err) {
-            window.alert(`Pipeline execution error: ${err.message}`);
+            showToast(`Pipeline execution error: ${err.message}`);
         } finally {
             hideLoading();
             setStatus('Ready');
@@ -1335,7 +1416,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (res.ok) {
                         const result = await res.json();
                         await loadWorkspace();
-                        await loadDashboard(getFilterValues());
+                        await loadDashboard();
                         const rowMsg = result.clean_total ? ` (${result.clean_total.toLocaleString()} rows processed)` : '';
                         setStatus(`Dataset imported & analyzed successfully!${rowMsg}`);
                     }
@@ -1356,11 +1437,23 @@ document.addEventListener('DOMContentLoaded', () => {
         submitPrompt(prompt);
     });
 
+    $$('.composer-mode').forEach(button => button.addEventListener('click', () => setComposerMode(button.dataset.composerMode)));
+    if (workspaceDiffToggle) workspaceDiffToggle.addEventListener('click', () => {
+        const expanded = workspaceDiffToggle.getAttribute('aria-expanded') === 'true';
+        workspaceDiffToggle.setAttribute('aria-expanded', String(!expanded));
+        loadWorkspaceDiff();
+    });
+    $$('#starter-prompts button').forEach(button => button.addEventListener('click', () => {
+        promptInput.value = button.dataset.starterPrompt;
+        promptInput.focus();
+    }));
+
     // Boot
     (async function boot() {
         showLoading();
         initSidebarResize();
         initSidebarState();
+        setComposerMode(state.composerMode);
         try {
             await Promise.all([refreshStatus(), loadSessions(), loadWorkspace()]);
             if (state.sessions.length > 0) {
@@ -1376,4 +1469,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }());
 
     window.__cipher = { state, renderAttachedFilesPreview, submitPrompt };
+    window.addEventListener('error', event => showToast(event.message || 'An unexpected error occurred.'));
+    window.addEventListener('unhandledrejection', event => showToast(event.reason?.message || 'An unexpected error occurred.'));
 });

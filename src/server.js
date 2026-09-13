@@ -110,6 +110,20 @@ function runPythonScript(scriptName, args = [], inputData = null) {
   });
 }
 
+function getWorkspaceDiff() {
+  return new Promise((resolve) => {
+    const git = spawn('git', ['diff', '--no-ext-diff', '--unified=2', '--', '.'], { cwd: PROJECT_ROOT, windowsHide: true });
+    let stdout = '';
+    git.stdout.on('data', (chunk) => { stdout += chunk; });
+    git.on('close', (code) => {
+      if (code !== 0 && code !== 1) return resolve({ available: false, files: [], diff: '' });
+      const files = [...stdout.matchAll(/^diff --git a\/(.+?) b\//gm)].map(match => match[1]);
+      resolve({ available: true, files, diff: stdout.slice(0, 24000), truncated: stdout.length > 24000 });
+    });
+    git.on('error', () => resolve({ available: false, files: [], diff: '' }));
+  });
+}
+
 function serveStatic(req, res, pathname) {
   let filePath = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '');
   const resolved = path.resolve(UI_DIR, filePath);
@@ -163,6 +177,19 @@ const server = http.createServer(async (req, res) => {
       const body = await parseJsonBody(req);
       const session = await jcodeService.createSession(body.workingDir);
       return sendJson(res, 201, session);
+    }
+
+    // API: Persist a concise, user-derived task title.
+    const titleMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/title$/);
+    if (titleMatch && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const title = String(body.title || '').trim().slice(0, 96);
+      if (!title) return sendJson(res, 400, { error: 'A session title is required.' });
+      return sendJson(res, 200, await jcodeService.renameSession(decodeURIComponent(titleMatch[1]), title));
+    }
+
+    if (method === 'GET' && pathname === '/api/workspace/diff') {
+      return sendJson(res, 200, await getWorkspaceDiff());
     }
 
     // Match /api/sessions/:id
@@ -312,15 +339,8 @@ const server = http.createServer(async (req, res) => {
 
     // API: Live SOC Dashboard Metrics & Filters (Gate 3)
     if (pathname === '/api/analytics/dashboard') {
-      const filters = method === 'POST' ? await parseJsonBody(req) : {
-        department: parsedUrl.searchParams.get('department'),
-        host: parsedUrl.searchParams.get('host'),
-        severity: parsedUrl.searchParams.get('severity'),
-        startDate: parsedUrl.searchParams.get('startDate'),
-        endDate: parsedUrl.searchParams.get('endDate'),
-        limit: parsedUrl.searchParams.get('limit') || 50,
-      };
-      const dashboardData = await runPythonScript('analytics_engine.py', [], filters);
+      const selection = method === 'POST' ? await parseJsonBody(req) : { dataset: parsedUrl.searchParams.get('dataset') };
+      const dashboardData = await runPythonScript('dataset_dashboard.py', [], selection);
       return sendJson(res, 200, dashboardData);
     }
 
@@ -382,6 +402,12 @@ const server = http.createServer(async (req, res) => {
           await fs.promises.writeFile(path.join(DATA_DIR, 'track2_endpoint_alerts.xlsx'), buffer);
         }
       }
+
+      // The dashboard deliberately reads only this explicit upload registry,
+      // never the bundled example datasets.
+      const registryPath = path.join(DATA_DIR, '.user-datasets.json');
+      const previous = fs.existsSync(registryPath) ? JSON.parse(fs.readFileSync(registryPath, 'utf8')) : [];
+      fs.writeFileSync(registryPath, JSON.stringify([...new Set([...previous, ...savedFiles])], null, 2));
 
       const output = await runPythonScript('pipeline.py');
       let result = typeof output === 'object' ? output : {};
@@ -448,4 +474,3 @@ server.on('error', (err) => {
 server.listen(PORT, () => {
   console.log(`[JCode Frontend Server] Running at http://localhost:${PORT}`);
 });
-
