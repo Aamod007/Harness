@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
         eventSource: null,
         tools: new Map(), // call_id -> { name, input, output, error, status }
         dashboardData: null,
+        attachedFiles: [],
     };
 
     // DOM Elements
@@ -66,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const apiKeyInput = $('#api-key-input');
     const saveApiKeyButton = $('#save-api-key-button');
     const fileUploadInput = $('#file-upload-input');
+    const attachedFilesPreview = $('#attached-files-preview');
     const sessionsView = $('#sessions-view');
     const workspaceEditor = $('#workspace-editor');
     const dashboardView = $('#dashboard-view');
@@ -238,6 +240,44 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tab === 'agents') renderLibrarySidebar();
     }
 
+    function cleanSessionTitle(raw) {
+        if (!raw) return 'New Session';
+        if (/^(llama|qwen|gpt|session)_\d+_[a-f0-9]+$/i.test(raw) || raw.startsWith('session_')) {
+            return 'New Session';
+        }
+        return raw;
+    }
+
+    function renderAttachedFilesPreview() {
+        const previewEl = $('#attached-files-preview');
+        if (!previewEl) return;
+        if (!state.attachedFiles || state.attachedFiles.length === 0) {
+            previewEl.innerHTML = '';
+            previewEl.classList.add('hidden');
+            return;
+        }
+        previewEl.classList.remove('hidden');
+        previewEl.innerHTML = state.attachedFiles.map((f, idx) => `
+            <div class="attached-file-badge attached-file-badge-preview">
+                <button type="button" class="attached-file-remove" data-remove-file="${idx}" title="Remove attachment">&times;</button>
+                <div class="attached-file-header">
+                    <span class="attached-file-name" title="${esc(f.name)}">${esc(f.name)}</span>
+                    <span class="attached-file-lines">${esc(f.lines ? `${f.lines} lines` : f.sizeStr)}</span>
+                </div>
+                <div class="attached-file-ext">${esc(f.ext)}</div>
+            </div>
+        `).join('');
+
+        previewEl.querySelectorAll('.attached-file-remove').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const idx = parseInt(btn.dataset.removeFile, 10);
+                state.attachedFiles.splice(idx, 1);
+                renderAttachedFilesPreview();
+            });
+        });
+    }
+
     function renderSessions() {
         const sessions = [...state.sessions].reverse();
         sessionCount.textContent = sessions.length;
@@ -248,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionList.innerHTML = sessions.map(item => `
             <div class="session-item-row ${item.id === state.selectedSession ? 'active' : ''}">
                 <button type="button" class="session-item" data-session-id="${esc(item.id)}">
-                    <span class="session-item-subject">${esc(short(item.subject || item.id, 40))}</span>
+                    <span class="session-item-subject">${esc(short(cleanSessionTitle(item.subject || item.id), 30))}</span>
                     <span class="session-item-time">${esc(timeAgo(item.time))}</span>
                 </button>
                 <button type="button" class="session-delete-btn" data-delete-session-id="${esc(item.id)}" aria-label="Archive session" title="Archive session">
@@ -278,7 +318,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const session = await api('POST', '/api/sessions', {});
             await loadSessions();
             selectSession(session.id);
-            setStatus('Fresh JCode session ready.');
+            sessionHeading.textContent = 'New Session';
+            setStatus('Ready — Ask JCode a question, dispatch a data role, or import a dataset.');
             promptInput.focus();
         } catch (err) {
             window.alert(`Could not create session: ${err.message}`);
@@ -651,8 +692,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const selected = state.sessions.find(item => item.id === id);
         renderSessions();
 
-        sessionHeading.textContent = selected?.subject || 'JCode Session';
-        setStatus('Connecting to harness...');
+        sessionHeading.textContent = cleanSessionTitle(selected?.subject) || 'New Session';
+        setStatus('Ready — Ask JCode a question, dispatch a data role, or import a dataset.');
         clearStreamOutput();
 
         // Connect real-time event stream
@@ -675,7 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (history && history.messages && history.messages.length) {
                 renderHistory(history.messages);
             } else {
-                setStatus('Session ready. Ask a question or request code modifications.');
+                setStatus('Ready — Ask JCode a question, dispatch a data role, or import a dataset.');
             }
         } catch (err) {
             setStatus(`Could not load session details: ${err.message}`);
@@ -698,7 +739,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function submitPrompt(prompt) {
         const text = prompt.trim();
-        if (!text) return;
+        const activeFiles = [...(state.attachedFiles || [])];
+        if (!text && activeFiles.length === 0) return;
+
+        state.attachedFiles = [];
+        renderAttachedFilesPreview();
 
         if (!state.selectedSession) {
             const session = await api('POST', '/api/sessions', {});
@@ -707,15 +752,43 @@ document.addEventListener('DOMContentLoaded', () => {
             connectSessionEvents(session.id);
         }
 
-        sessionHeading.textContent = text;
+        sessionHeading.textContent = cleanSessionTitle(text || activeFiles[0]?.name);
         clearStreamOutput();
         streamCard.classList.remove('hidden');
         streamModel.textContent = state.currentModel || '';
         setGeneratingState(true);
         setStatus('Dispatching to JCode...');
 
+        // Render user message with attached file preview matching Screenshot 1
+        let userMessageHtml = '';
+        if (activeFiles.length) {
+            userMessageHtml += `
+                <div class="user-message-container">
+                    ${activeFiles.map(f => `
+                        <div class="attached-file-badge">
+                            <div class="attached-file-header">
+                                <span class="attached-file-name" title="${esc(f.name)}">${esc(f.name)}</span>
+                                <span class="attached-file-lines">${esc(f.lines ? `${f.lines} lines` : f.sizeStr)}</span>
+                            </div>
+                            <div class="attached-file-ext">${esc(f.ext)}</div>
+                        </div>
+                    `).join('')}
+                    ${text ? `<div class="user-message-bubble">${esc(text)}</div>` : ''}
+                </div>
+            `;
+        } else {
+            userMessageHtml = `<div class="user-message-container"><div class="user-message-bubble">${esc(text)}</div></div>`;
+        }
+
+        streamText.innerHTML = userMessageHtml;
+
+        let fullPrompt = text;
+        if (activeFiles.length) {
+            fullPrompt = `[Attached Files: ${activeFiles.map(f => f.name).join(', ')}]\n${text}`;
+        }
+
         try {
-            const res = await api('POST', `/api/sessions/${encodeURIComponent(state.selectedSession)}/prompt`, { prompt: text });
+            const res = await api('POST', `/api/sessions/${encodeURIComponent(state.selectedSession)}/prompt`, { prompt: fullPrompt });
             if (res && res.chart) {
                 handleJcodeEvent({
                     ev: 'chart_ready',
@@ -1226,37 +1299,53 @@ document.addEventListener('DOMContentLoaded', () => {
             const files = Array.from(e.target.files || []);
             if (!files.length) return;
 
-            showLoading();
-            const filenames = files.map(f => f.name).join(', ');
-            setStatus(`Importing dataset: ${filenames}...`);
-            try {
-                const formData = new FormData();
-                files.forEach(f => formData.append('files', f));
+            for (const f of files) {
+                const ext = (f.name.split('.').pop() || 'FILE').toUpperCase();
+                const sizeStr = f.size > 1024 * 1024
+                    ? `${(f.size / (1024 * 1024)).toFixed(1)} MB`
+                    : `${Math.max(1, Math.round(f.size / 1024))} KB`;
 
-                const res = await fetch('/api/upload', {
-                    method: 'POST',
-                    body: formData,
-                });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({ error: res.statusText }));
-                    throw new Error(err.error || err.detail || res.statusText);
+                let lines = null;
+                if (f.type.startsWith('text/') || /\.(md|txt|py|js|json|csv|sql|env)$/i.test(f.name)) {
+                    try {
+                        const text = await f.text();
+                        lines = text.split('\n').length;
+                    } catch (_) {}
                 }
-                const result = await res.json();
 
-                await loadWorkspace();
-                switchSidebarTab('dashboard');
-                await loadDashboard(getFilterValues());
-
-                const rowMsg = result.clean_total ? ` (${result.clean_total.toLocaleString()} rows processed)` : '';
-                setStatus(`Dataset imported & analyzed successfully!${rowMsg}`);
-            } catch (err) {
-                console.error('[Import error]:', err);
-                window.alert(`Import and analysis failed: ${err.message}`);
-                setStatus(`Import error: ${err.message}`);
-            } finally {
-                hideLoading();
-                fileUploadInput.value = '';
+                state.attachedFiles.push({
+                    name: f.name,
+                    sizeStr,
+                    lines,
+                    ext,
+                });
             }
+            renderAttachedFilesPreview();
+            promptInput.focus();
+
+            // Background ingest datasets if tabular
+            const datasets = files.filter(f => /\.(csv|tsv|xlsx|xls|json|parquet)$/i.test(f.name));
+            if (datasets.length) {
+                showLoading();
+                setStatus(`Importing dataset: ${datasets.map(f => f.name).join(', ')}...`);
+                try {
+                    const formData = new FormData();
+                    datasets.forEach(f => formData.append('files', f));
+                    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                    if (res.ok) {
+                        const result = await res.json();
+                        await loadWorkspace();
+                        await loadDashboard(getFilterValues());
+                        const rowMsg = result.clean_total ? ` (${result.clean_total.toLocaleString()} rows processed)` : '';
+                        setStatus(`Dataset imported & analyzed successfully!${rowMsg}`);
+                    }
+                } catch (err) {
+                    console.warn('[Import error]:', err);
+                } finally {
+                    hideLoading();
+                }
+            }
+            fileUploadInput.value = '';
         });
     }
 
@@ -1285,4 +1374,6 @@ document.addEventListener('DOMContentLoaded', () => {
             hideLoading();
         }
     }());
+
+    window.__cipher = { state, renderAttachedFilesPreview, submitPrompt };
 });

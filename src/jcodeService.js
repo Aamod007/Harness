@@ -59,7 +59,7 @@ class JcodeService {
       console.log(`[jcodeService] Spawning JCode daemon (serve) with provider '${DEFAULT_PROVIDER}'...`);
       this.daemonProcess = spawn(
         this.jcodeBinary,
-        ['-p', DEFAULT_PROVIDER, 'serve', '--tools', '*'],
+        ['-p', DEFAULT_PROVIDER, '-m', DEFAULT_MODEL, 'serve', '--tools', 'bash,read,write,apply_patch'],
         {
           cwd: this.workspaceDir,
           stdio: ['ignore', 'ignore', 'inherit'],
@@ -165,12 +165,18 @@ class JcodeService {
   async listSessions() {
     if (!this.client) await this.connectClient();
     const rawSessions = await this.client.listSessions();
-    return rawSessions.map((s) => ({
-      id: s.session_id,
-      subject: s.title || (s.session_id ? s.session_id.replace(/^session_/, '').replace(/_/g, ' ') : 'Session'),
-      time: s.last_modified ? new Date(s.last_modified).toISOString() : new Date().toISOString(),
-      working_dir: s.working_dir || this.workspaceDir,
-    }));
+    return rawSessions.map((s) => {
+      let cleanSubject = s.title;
+      if (!cleanSubject || cleanSubject.startsWith('session_') || /^(llama|qwen|gpt)_\d+_[a-f0-9]+$/i.test(cleanSubject)) {
+        cleanSubject = 'New Session';
+      }
+      return {
+        id: s.session_id,
+        subject: cleanSubject,
+        time: s.last_modified ? new Date(s.last_modified).toISOString() : new Date().toISOString(),
+        working_dir: s.working_dir || this.workspaceDir,
+      };
+    });
   }
 
   async createSession(workingDir = this.workspaceDir) {
@@ -185,7 +191,7 @@ class JcodeService {
     }
     return {
       id: session.session_id,
-      subject: session.title || session.session_id,
+      subject: 'New Session',
       working_dir: workingDir,
       time: new Date().toISOString(),
     };

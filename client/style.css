@@ -691,3 +691,123 @@ html[data-theme="dark"] .detail-table tr:hover td {
     font-family: var(--sans);
 }
 
+/* Attached File Preview & Message Badge (Screenshot 1 Reference) */
+.prompt-attach-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+    margin-right: 4px;
+    flex-shrink: 0;
+}
+.prompt-attach-btn:hover {
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.attached-files-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 8px;
+    order: -1;
+}
+
+.attached-file-badge {
+    background: #191a1f;
+    border: 1px solid #2b2e38;
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 120px;
+    max-width: 190px;
+    position: relative;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    text-align: left;
+}
+
+.attached-file-badge-preview {
+    padding-right: 26px;
+}
+
+.attached-file-badge .attached-file-header {
+    display: flex;
+    flex-direction: column;
+}
+
+.attached-file-badge .attached-file-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e6edf3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.attached-file-badge .attached-file-lines {
+    font-size: 11px;
+    color: #8b949e;
+    font-family: var(--mono);
+    margin-top: 2px;
+}
+
+.attached-file-badge .attached-file-ext {
+    align-self: flex-start;
+    margin-top: 6px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    font-size: 10px;
+    font-weight: 700;
+    color: #8b949e;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-family: var(--mono);
+}
+
+.attached-file-remove {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: transparent;
+    border: none;
+    color: #8b949e;
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 4px;
+}
+.attached-file-remove:hover {
+    color: #f85149;
+}
+
+/* Chat user message with attached file reference (Screenshot 1) */
+.user-message-container {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.user-message-bubble {
+    background: #1e1f26;
+    border: 1px solid #2d313c;
+    color: #e6edf3;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    max-width: 85%;
+    text-align: left;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
