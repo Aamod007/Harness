@@ -64,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsMenu = $('#settings-menu');
     const profileMenu = $('#profile-menu');
     const modelSelect = $('#model-select');
+    const modelSwitchStatus = $('#model-switch-status');
     const providerInput = $('#provider-input');
     const apiKeyInput = $('#api-key-input');
     const saveApiKeyButton = $('#save-api-key-button');
@@ -307,7 +308,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renameSessionFromPrompt(prompt, fallback) {
         if (!state.selectedSession) return;
         const selected = state.sessions.find(item => item.id === state.selectedSession);
-        if (selected && cleanSessionTitle(selected.subject) !== 'New Session') return;
+        
+        const currentTitle = cleanSessionTitle(selected?.subject);
+        if (currentTitle && currentTitle !== 'New Session' && currentTitle !== 'Untitled' && currentTitle !== 'New Conversation') return;
+
         const title = titleFromPrompt(prompt, fallback);
         if (title === 'New Session') return;
         sessionHeading.textContent = title;
@@ -451,9 +455,11 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSessions();
     }
 
-    function clearStreamOutput() {
+    function clearStreamOutput(preserveChat = false) {
         streamCard.classList.add('hidden');
-        streamText.textContent = '';
+        if (!preserveChat) {
+            streamText.textContent = '';
+        }
         reasoningBlock.classList.add('hidden');
         reasoningText.textContent = '';
         toolActivity.classList.add('hidden');
@@ -637,7 +643,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleJcodeEvent(event) {
         const ev = event.ev;
-        const activeOutput = () => streamText.querySelector('.agent-run-output') || streamText;
+        const activeOutput = () => {
+            const outputs = streamText.querySelectorAll('.agent-run-output');
+            return outputs.length > 0 ? outputs[outputs.length - 1] : streamText;
+        };
 
         if (ev === 'agent_ready') {
             streamCard.classList.remove('hidden');
@@ -807,6 +816,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.models = models.models;
                 state.currentModel = models.current || state.currentModel;
                 updateModelSelectUI();
+                modelSelect.disabled = models.can_switch === false;
+                if (modelSwitchStatus) {
+                    modelSwitchStatus.textContent = models.can_switch === false ? models.message : '';
+                    modelSwitchStatus.className = `provider-status${models.can_switch === false ? ' warning' : ''}`;
+                }
             }
 
             if (history && history.messages && history.messages.length) {
@@ -859,7 +873,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         sessionHeading.textContent = cleanSessionTitle(text || activeFiles[0]?.name);
         await renameSessionFromPrompt(text, activeFiles[0]?.name);
-        clearStreamOutput();
+        clearStreamOutput(true);
         streamCard.classList.remove('hidden');
         streamModel.textContent = state.currentModel || '';
         setGeneratingState(true);
@@ -886,7 +900,7 @@ document.addEventListener('DOMContentLoaded', () => {
             userMessageHtml = `<div class="user-message-container"><div class="user-message-bubble">${esc(text)}</div></div>`;
         }
 
-        streamText.innerHTML = `${userMessageHtml}<div class="agent-run-output" aria-live="polite"></div>`;
+        streamText.insertAdjacentHTML('beforeend', `${userMessageHtml}<div class="agent-run-output" aria-live="polite"></div>`);
 
         let fullPrompt = text ? `[${state.composerMode} mode] ${text}` : `[${state.composerMode} mode] Review the attached files.`;
         if (activeFiles.length) {
@@ -905,7 +919,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (res && res.result) {
                 streamBadge.textContent = 'READY';
                 streamBadge.classList.add('idle');
-                streamText.querySelector('.agent-run-output').innerHTML = formatAgentOutputHtml(res.agentName || 'Agent Execution', res.result);
+                const outputs = streamText.querySelectorAll('.agent-run-output');
+                if (outputs.length) outputs[outputs.length - 1].innerHTML = formatAgentOutputHtml(res.agentName || 'Agent Execution', res.result);
                 setGeneratingState(false);
                 setStatus('Ready');
             }
@@ -913,9 +928,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             setGeneratingState(false);
             setStatus(`Dispatch error: ${error.message}`);
-            const output = streamText.querySelector('.agent-run-output');
+            const outputs = streamText.querySelectorAll('.agent-run-output');
+            const output = outputs.length ? outputs[outputs.length - 1] : null;
             if (output) output.textContent = `Error sending prompt: ${error.message}`;
-            else streamText.textContent = `Error sending prompt: ${error.message}`;
+            else streamText.insertAdjacentHTML('beforeend', `Error sending prompt: ${error.message}`);
         }
     }
 
@@ -951,7 +967,37 @@ document.addEventListener('DOMContentLoaded', () => {
             streamModel.textContent = model;
             setStatus(`Model switched to ${model}`);
         } catch (err) {
-            showToast(`Could not switch model: ${err.message}`);
+            modelSelect.value = state.currentModel || model;
+            showToast(`Could not switch model: ${err.message || 'The active provider does not offer that model.'}`);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    function applyModels(models) {
+        state.models = models.models || [];
+        state.currentModel = models.current || state.currentModel;
+        updateModelSelectUI();
+        modelSelect.disabled = models.can_switch === false;
+        if (modelSwitchStatus) {
+            modelSwitchStatus.textContent = models.message || '';
+            modelSwitchStatus.className = `provider-status${models.message ? ' warning' : ''}`;
+        }
+    }
+
+    async function switchProvider(provider) {
+        if (!state.selectedSession) return;
+        showLoading();
+        try {
+            const result = await api('POST', '/api/config/provider', { provider: provider === 'openai-compatible' ? 'lm-studio' : 'groq' });
+            state.currentModel = result.model || state.currentModel;
+            if (result.models) applyModels({ models: result.models, current: result.model, can_switch: true, message: result.models.length > 1 ? undefined : 'LM Studio has one loaded chat model.' });
+            else applyModels(await api('GET', `/api/sessions/${encodeURIComponent(state.selectedSession)}/models`));
+            setStatus(`${provider === 'openai-compatible' ? 'LM Studio' : 'Groq'} is active.`);
+            await refreshStatus();
+        } catch (err) {
+            providerInput.value = state.status?.active_provider === 'lm-studio' ? 'openai-compatible' : 'groq';
+            showToast(`Could not switch provider: ${err.message}`);
         } finally {
             hideLoading();
         }
@@ -968,6 +1014,10 @@ document.addEventListener('DOMContentLoaded', () => {
             apiKeyInput.value = '';
             showToast(`API key saved for ${provider}.`, 'success');
             await refreshStatus();
+            if (state.selectedSession) {
+                const models = await api('GET', `/api/sessions/${encodeURIComponent(state.selectedSession)}/models`);
+                applyModels(models);
+            }
         } catch (err) {
             showToast(`Failed saving key: ${err.message}`);
         } finally {
@@ -1221,7 +1271,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (harnessElem && state.status.provider) {
             harnessElem.textContent = `${state.status.provider} (${state.status.model || 'default'})`;
         }
-        if (providerInput && state.status.provider === 'openai-compatible') {
+        if (providerInput && state.status.active_provider === 'lm-studio') {
             providerInput.value = 'openai-compatible';
         }
         if (state.status.lm_studio && lmStudioStatus) {
@@ -1286,6 +1336,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#reset-button').addEventListener('click', clearSessions);
     cancelButton.addEventListener('click', cancelActiveRun);
     modelSelect.addEventListener('change', (e) => switchModel(e.target.value));
+    providerInput.addEventListener('change', (e) => switchProvider(e.target.value));
     saveApiKeyButton.addEventListener('click', saveApiKey);
     checkLmStudioButton.addEventListener('click', refreshLmStudioStatus);
 
