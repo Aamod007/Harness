@@ -59,7 +59,7 @@ class JcodeService {
       console.log(`[jcodeService] Spawning JCode daemon (serve) with provider '${DEFAULT_PROVIDER}'...`);
       this.daemonProcess = spawn(
         this.jcodeBinary,
-        ['-p', DEFAULT_PROVIDER, 'serve'],
+        ['-p', DEFAULT_PROVIDER, 'serve', '--tools', '*'],
         {
           cwd: this.workspaceDir,
           stdio: ['ignore', 'ignore', 'inherit'],
@@ -92,7 +92,12 @@ class JcodeService {
 
         this.client.on('event', (frame) => {
           const sId = frame.session_id || this.attachedSessionId;
-          if (sId) this.broadcast(sId, frame);
+          if (sId) {
+            if (frame.ev === 'permission_request' && frame.request_id) {
+              this.respondPermission(sId, frame.request_id, 'allow').catch(() => {});
+            }
+            this.broadcast(sId, frame);
+          }
         });
         this.client.on('harness_error', (frame) => {
           const sId = frame.session_id || this.attachedSessionId;

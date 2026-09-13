@@ -429,10 +429,10 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="agent-output-wrapper" style="margin-top: 6px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 16px;">🤖</span>
-                        <strong style="font-size: 14px; color: var(--ink);">${esc(agentName)}</strong>
+                        <span style="font-size: 16px;">⚡</span>
+                        <strong style="font-size: 14px; color: var(--ink);">JCode Engine: ${esc(agentName)}</strong>
                     </div>
-                    <span class="kpi-badge badge-success" style="font-size: 9px; padding: 2px 8px; background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3);">EXECUTION COMPLETED</span>
+                    <span class="kpi-badge badge-success" style="font-size: 9px; padding: 2px 8px; background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3);">JCODE PROCESSED</span>
                 </div>`;
 
         if (strategyNote) {
@@ -932,24 +932,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function renderLibrarySidebar() {
-        let agents = [
-            { name: 'JCode Harness', category: 'Runtime', tag: state.status?.connected ? 'CONNECTED' : 'LOCAL', description: 'Core LLM agent harness' },
-        ];
+        let roles = [];
         try {
             const res = await api('GET', '/api/agents');
-            if (res && res.agents) agents = agents.concat(res.agents);
+            if (res && res.agents) roles = res.agents;
         } catch (_) {}
 
-        $('#library-list-sidebar').innerHTML = agents.map(agent => `
+        $('#library-list-sidebar').innerHTML = roles.map(role => `
             <div class="sidebar-agent-card" style="border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; background: var(--canvas-light);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <strong style="font-size: 11px; color: var(--ink);">${esc(agent.name || agent.title)}</strong>
-                    <span class="kpi-badge badge-info" style="font-size: 8px;">${esc(agent.tag || 'READY')}</span>
+                    <strong style="font-size: 11px; color: var(--ink);">${esc(role.name || role.title)}</strong>
+                    <span class="kpi-badge badge-info" style="font-size: 8px;">ROUTING ROLE</span>
                 </div>
-                <p style="font-size: 10px; color: var(--muted); margin: 0 0 6px 0; line-height: 1.3;">${esc(agent.description || agent.category || '')}</p>
+                <p style="font-size: 10px; color: var(--muted); margin: 0 0 6px 0; line-height: 1.3;">${esc(role.description || role.category || '')}</p>
                 <div style="display: flex; gap: 4px;">
-                    <button type="button" class="plain-button run-agent-btn" data-agent-id="${esc(agent.id || '')}" data-agent-name="${esc(agent.name || agent.title)}" style="font-size: 9px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; flex: 1; text-align: center; background: rgba(99,102,241,0.1); color: #818cf8;">RUN AGENT</button>
-                    <button type="button" class="plain-button use-agent-btn" data-agent-id="${esc(agent.id || '')}" data-agent-name="${esc(agent.name || agent.title)}" style="font-size: 9px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; flex: 1; text-align: center;">PROMPT</button>
+                    <button type="button" class="plain-button run-agent-btn" data-agent-id="${esc(role.id || '')}" data-agent-name="${esc(role.name || role.title)}" style="font-size: 9px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; flex: 1; text-align: center; background: rgba(99,102,241,0.1); color: #818cf8;">RUN ON JCODE</button>
+                    <button type="button" class="plain-button use-agent-btn" data-agent-id="${esc(role.id || '')}" data-agent-name="${esc(role.name || role.title)}" style="font-size: 9px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; flex: 1; text-align: center;">PROMPT JCODE</button>
                 </div>
             </div>
         `).join('');
@@ -957,7 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $$('.use-agent-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const name = btn.dataset.agentName;
-                promptInput.value = `Using ${name}: Analyze zero-trust metrics and identify anomalies in this workspace.`;
+                promptInput.value = `Route to JCode [${name}]: Process zero-trust metrics and identify anomalies.`;
                 switchSidebarTab('sessions');
                 promptInput.focus();
             });
@@ -972,7 +970,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 streamCard.classList.remove('hidden');
                 streamBadge.textContent = 'RUNNING';
                 streamBadge.classList.remove('idle');
-                streamText.innerHTML = `<em>Executing <strong>${esc(agentName)}</strong>...</em>`;
+                streamText.innerHTML = `<em>JCode processing <strong>${esc(agentName)}</strong> task end-to-end...</em>`;
                 showLoading();
                 try {
                     const res = await api('POST', '/api/agent/run', { agentId });
@@ -980,7 +978,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     streamBadge.classList.add('idle');
                     streamText.innerHTML = formatAgentOutputHtml(agentName, res.result);
                 } catch (err) {
-                    streamText.innerHTML = `<p style="color: #f85149;">Error running ${esc(agentName)}: ${esc(err.message)}</p>`;
+                    streamText.innerHTML = `<p style="color: #f85149;">Error on JCode processing ${esc(agentName)}: ${esc(err.message)}</p>`;
                 } finally {
                     hideLoading();
                 }

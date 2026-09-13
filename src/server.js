@@ -191,76 +191,45 @@ const server = http.createServer(async (req, res) => {
       const prompt = body.prompt || body.question;
       if (!prompt) return sendJson(res, 400, { error: 'Prompt is required.' });
 
-      // Supervisor routing: Detect Track 2 Analytics & Text-to-Chart queries
-      const isAnalyticsQuery = /trend|failed login|chart|graph|plot|severity|insider|firewall|protocol|risk|compromised|rubric/i.test(prompt);
-      if (isAnalyticsQuery) {
-        // Broadcast tool events to UI
-        jcodeService.broadcast(sessionId, { ev: 'tool_start', call_id: 'chart_agent', name: 'text_to_chart_agent' });
-        jcodeService.broadcast(sessionId, { ev: 'tool_input_delta', call_id: 'chart_agent', delta: prompt });
-
-        try {
+      // Primary: JCode Harness orchestrates prompt and sub-agents
+      try {
+        await jcodeService.sendPrompt(sessionId, prompt);
+        return sendJson(res, 200, { ok: true, session_id: sessionId });
+      } catch (jcodeErr) {
+        console.warn('[server] JCode harness offline or error, running fallback:', jcodeErr.message);
+        // Fallback: direct script execution if JCode bridge is disconnected
+        const isAnalyticsQuery = /trend|failed login|chart|graph|plot|severity|insider|firewall|protocol|risk|compromised|rubric/i.test(prompt);
+        if (isAnalyticsQuery) {
+          jcodeService.broadcast(sessionId, { ev: 'tool_start', call_id: 'chart_agent', name: 'text_to_chart_agent' });
           const chartResult = await runPythonScript('chartAgent.py', [prompt]);
-          jcodeService.broadcast(sessionId, { ev: 'tool_done', call_id: 'chart_agent', output: 'Generated Plotly Chart & Analysis' });
+          jcodeService.broadcast(sessionId, { ev: 'tool_done', call_id: 'chart_agent', output: 'Generated Chart' });
           jcodeService.broadcast(sessionId, { ev: 'text_delta', text: chartResult.text_summary || '' });
-          jcodeService.broadcast(sessionId, {
-            ev: 'chart_ready',
-            chart: chartResult.primary_chart,
-            summary: chartResult.text_summary,
-            query: prompt,
-            chart_type: chartResult.chart_type,
-          });
+          jcodeService.broadcast(sessionId, { ev: 'chart_ready', chart: chartResult.primary_chart, summary: chartResult.text_summary, query: prompt, chart_type: chartResult.chart_type });
           jcodeService.broadcast(sessionId, { ev: 'turn_done' });
           return sendJson(res, 200, { ok: true, session_id: sessionId, chart: chartResult });
-        } catch (err) {
-          console.error('[chart_agent error]:', err.message);
-          jcodeService.broadcast(sessionId, { ev: 'tool_done', call_id: 'chart_agent', error: err.message });
-          // Fall back to standard JCode execution
-          await jcodeService.sendPrompt(sessionId, prompt);
-          return sendJson(res, 200, { ok: true, session_id: sessionId });
         }
-      }
-
-      // Supervisor routing: Detect explicit Agent execution
-      const agentMatch = prompt.match(/using\s+([\w\s&]+):/i);
-      if (agentMatch) {
-        const queryName = agentMatch[1].trim().toLowerCase();
-        const AGENT_MAP = {
-          'data loader': 'data_loader_agent',
-          'cleaning': 'cleaning_agent',
-          'feature': 'feature_agent',
-          'wrangling': 'wrangling_agent',
-          'sql database': 'sql_agent',
-          'sql data analyst': 'sql_analyst',
-          'pandas': 'pandas_analyst',
-          'visualization': 'viz_agent',
-          'eda': 'eda_agent',
-          'model evaluation': 'model_eval_agent',
-          'workflow planner': 'planner_agent',
-          'supervisor': 'supervisor_ds_team',
-          'network': 'network_agent',
-          'identity': 'identity_agent',
-          'threat': 'threat_agent',
-          'imputation': 'imputation_agent',
-        };
-        const matchedKey = Object.keys(AGENT_MAP).find(k => queryName.includes(k));
-        const agentId = matchedKey ? AGENT_MAP[matchedKey] : 'supervisor_ds_team';
-
-        jcodeService.broadcast(sessionId, { ev: 'tool_start', call_id: agentId, name: agentId });
-        try {
+        const agentMatch = prompt.match(/using\s+([\w\s&]+):/i);
+        if (agentMatch) {
+          const queryName = agentMatch[1].trim().toLowerCase();
+          const AGENT_MAP = {
+            'data loader': 'data_loader_agent', 'cleaning': 'cleaning_agent', 'feature': 'feature_agent',
+            'wrangling': 'wrangling_agent', 'sql database': 'sql_agent', 'sql data analyst': 'sql_analyst',
+            'pandas': 'pandas_analyst', 'visualization': 'viz_agent', 'eda': 'eda_agent',
+            'model evaluation': 'model_eval_agent', 'workflow planner': 'planner_agent',
+            'supervisor': 'supervisor_ds_team', 'network': 'network_agent', 'identity': 'identity_agent',
+            'threat': 'threat_agent', 'imputation': 'imputation_agent',
+          };
+          const matchedKey = Object.keys(AGENT_MAP).find(k => queryName.includes(k));
+          const agentId = matchedKey ? AGENT_MAP[matchedKey] : 'supervisor_ds_team';
+          jcodeService.broadcast(sessionId, { ev: 'tool_start', call_id: agentId, name: agentId });
           const agentResult = await runPythonScript('data_agents.py', ['--agent', agentId]);
-          const agentDisplayName = matchedKey ? matchedKey.toUpperCase() : agentId;
           jcodeService.broadcast(sessionId, { ev: 'tool_done', call_id: agentId, output: 'Execution completed' });
-          jcodeService.broadcast(sessionId, { ev: 'agent_ready', result: agentResult, agentId, name: agentDisplayName });
+          jcodeService.broadcast(sessionId, { ev: 'agent_ready', result: agentResult, agentId, name: matchedKey ? matchedKey.toUpperCase() : agentId });
           jcodeService.broadcast(sessionId, { ev: 'turn_done' });
-          return sendJson(res, 200, { ok: true, session_id: sessionId, result: agentResult, agentName: agentDisplayName });
-        } catch (err) {
-          console.error(`[${agentId} error]:`, err.message);
-          jcodeService.broadcast(sessionId, { ev: 'tool_done', call_id: agentId, error: err.message });
+          return sendJson(res, 200, { ok: true, session_id: sessionId, result: agentResult });
         }
+        return sendJson(res, 500, { error: jcodeErr.message });
       }
-
-      await jcodeService.sendPrompt(sessionId, prompt);
-      return sendJson(res, 200, { ok: true, session_id: sessionId });
     }
 
     // Match /api/sessions/:id/events (Server-Sent Events)
@@ -443,7 +412,16 @@ const server = http.createServer(async (req, res) => {
       const body = await parseJsonBody(req);
       const agentId = body.agentId || body.id;
       const input = body.input || {};
+      const activeSession = jcodeService.attachedSessionId;
+      if (activeSession) {
+        jcodeService.broadcast(activeSession, { ev: 'tool_start', call_id: agentId, name: agentId });
+      }
       const result = await runPythonScript('data_agents.py', ['--agent', agentId, '--input', JSON.stringify(input)]);
+      if (activeSession) {
+        jcodeService.broadcast(activeSession, { ev: 'tool_done', call_id: agentId, output: 'Agent completed' });
+        jcodeService.broadcast(activeSession, { ev: 'agent_ready', result, agentId });
+        jcodeService.broadcast(activeSession, { ev: 'turn_done' });
+      }
       return sendJson(res, 200, { ok: true, result });
     }
 

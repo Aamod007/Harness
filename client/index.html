@@ -25,7 +25,7 @@
                 <button class="sidebar-tab active" type="button" data-sidebar-tab="sessions" aria-selected="true">SESSIONS</button>
                 <button class="sidebar-tab" type="button" data-sidebar-tab="dashboard" aria-selected="false">DASHBOARD</button>
                 <button class="sidebar-tab" type="button" data-sidebar-tab="workspace" aria-selected="false">WORKSPACE</button>
-                <button class="sidebar-tab" type="button" data-sidebar-tab="agents" aria-selected="false">AGENTS</button>
+                <button class="sidebar-tab" type="button" data-sidebar-tab="agents" aria-selected="false">ROLES</button>
             </nav>
 
             <div class="sidebar-content">
@@ -74,8 +74,9 @@
                     <div id="workspace-tree-sidebar" class="workspace-tree-sidebar" role="tree" aria-label="Cipher workspace files"></div>
                 </section>
 
-                <section class="sidebar-view" id="sidebar-agents-view" aria-label="Available agents" hidden>
-                    <div class="side-label-row"><span>AGENTS</span></div>
+                <section class="sidebar-view" id="sidebar-agents-view" aria-label="Available routing roles" hidden>
+                    <div class="side-label-row"><span>ROUTING ROLES</span><span style="font-size: 9px; color: var(--muted);">JCODE ENGINE</span></div>
+                    <p class="workspace-hint">Structured task templates routed and processed end-to-end on JCode.</p>
                     <div id="library-list-sidebar" class="library-list-sidebar" aria-live="polite"></div>
                 </section>
             </div>
