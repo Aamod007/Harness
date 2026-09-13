@@ -35,48 +35,290 @@ This platform enforces a strict 100% row survival guarantee across all ingested 
 
 ## System Architecture and Data Flow
 
-The platform is structured into six decoupled operational tiers. Data flows deterministically from raw telemetry capture through heuristic data rescue, columnar storage, multi-agent intelligence, and presentation interfaces.
+The platform is structured into six decoupled operational tiers designed around a non-negotiable zero-trust principle: **100% row survival with zero data loss**. Data flows deterministically from raw heterogeneous telemetry capture through heuristic data rescue, embedded columnar storage, autonomous multi-agent intelligence, and a dual-mode presentation interface.
 
-### Tier 1: Ingestion Tier
-The ingestion tier accepts raw, heterogeneous enterprise telemetry files in multiple formats without requiring prior schema normalization:
-- Identity and Asset Master: 3,090 employee records in CSV format (track2_identity_asset_master.csv).
-- Perimeter Firewall Telemetry: 30,600 network connection events in CSV format (track2_firewall_logs.csv).
-- IAM Authentication Audit Trail: 20,500 access transactions in JSON format (track2_iam_audit_trail.json).
-- EDR Endpoint Threat Alerts: 8,240 security alert events in Excel format (track2_endpoint_alerts.xlsx).
+> Comprehensive technical specifications, mathematical scoring formulations, and subsystem schemas are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-### Tier 2: Data Rescue and Normalization Engine
-The data rescue engine operates in agents/pipeline.py, executing five specialized recovery algorithms:
-- Truncated-IP Reconstruction: Synthesizes complete 4-octet gateway addresses for truncated 3-octet private IPs and validates 0 to 255 octet bounds.
-- Cross-Trail Temporal Session Reconciliation: Matches firewall records lacking session IDs to concurrent IAM logins within a +/- 5-minute window on identical hostnames.
-- Unstructured Antivirus Alert Regex Parser: Extracts severity tiers, affected workstation hostnames, and threat signature identifiers from free-text descriptions.
-- Dual-Pass Timestamp Normalization: Standardizes ISO-8601, US slash dates, European slash dates, hyphenated timestamps, and Unix epoch seconds into canonical UTC ISO-8601 strings.
-- Multilingual Unicode NFC Sanitization: Normalizes international employee names and text attributes to Unicode Normalization Form C, stripping non-printable control bytes.
-- Impossible Resolution Timestamp Detection: Flags alerts where resolution timestamps precede detection timestamps without dropping records.
+```
++----------------------------------------------------------------------------------------------------+
+|                                    PLATFORM ARCHITECTURE MAP                                       |
++----------------------------------------------------------------------------------------------------+
+|                                                                                                    |
+|  [ RAW TELEMETRY SOURCES ]                                                                         |
+|  * Identity Master: track2_identity_asset_master.csv (3,090 rows)                                  |
+|  * Perimeter Firewall: track2_firewall_logs.csv (30,600 rows)                                      |
+|  * IAM Audit Trail: track2_iam_audit_trail.json (20,500 rows)                                       |
+|  * EDR Threat Alerts: track2_endpoint_alerts.xlsx (8,240 rows)                                      |
+|         |                                                                                          |
+|         v                                                                                          |
+|  +----------------------------------------------------------------------------------------------+  |
+|  | TIER 1: INGESTION & VALIDATION TIER (agents/pipeline.py)                                     |  |
+|  | Multi-format streaming chunk parsers (CSV, JSON, Excel), schema profiling, encoding detection  |  |
+|  +----------------------------------------------------------------------------------------------+  |
+|         |                                                                                          |
+|         v                                                                                          |
+|  +----------------------------------------------------------------------------------------------+  |
+|  | TIER 2: DETERMINISTIC DATA RESCUE & NORMALIZATION ENGINE (agents/pipeline.py)                 |  |
+|  | * Truncated-IP Reconstruction        * Temporal Session Reconciliation (+/-5 min window)     |  |
+|  | * Unstructured AV Alert Regex Parser * Dual-Pass Timestamp Normalization (UTC ISO-8601)      |  |
+|  | * Multilingual Unicode NFC Hygiene   * Impossible Resolution Detection (flagged, not dropped)|  |
+|  | Guaranteed Metric: 62,430 Ingested -> 62,430 Cleaned (100.0% Row Survival Rate)              |  |
+|  +----------------------------------------------------------------------------------------------+  |
+|         |                                                                                          |
+|         v                                                                                          |
+|  +----------------------------------------------------------------------------------------------+  |
+|  | TIER 3: CERTIFIED EMBEDDED COLUMNAR STORAGE (data/cyber_metrics.duckdb)                      |  |
+|  | Base Tables: users, firewall_logs, logins, endpoint_alerts, unified_telemetry                 |  |
+|  | Certified Views: v_dept_login_failure_trend, v_failed_login_rate, v_insider_risk_score,       |  |
+|  |                  v_firewall_action_by_protocol, v_endpoint_alerts_by_severity                 |  |
+|  | Auditability: Tamper-Evident SHA-256 Hash Digest Verification Receipt                        |  |
+|  +----------------------------------------------------------------------------------------------+  |
+|         |                                            |                                             |
+|         v                                            v                                             |
+|  +-------------------------------+    +---------------------------------------------------------+  |
+|  | TIER 4: MULTI-AGENT HIVE      |    | TIER 5: BACKEND INTEGRATION & RUNTIME                   |  |
+|  | (agents/data_agents.py)       |    | (src/server.js, src/jcodeService.js, vendor/jcode)      |  |
+|  | * 12 Data Science Agents      |    | * Node.js HTTP Server (Port 8080)                       |  |
+|  | * 4 Zero-Trust Security Agents|    | * Server-Sent Events (SSE) Streaming Engine             |  |
+|  | * Text-to-Chart Copilot       |    | * Python Subprocess Bridge (CLI stdin/stdout JSON)      |  |
+|  |   (agents/chartAgent.py)      |    | * JCode Agent Daemon (Rust Engine) & Socket Bridge      |  |
+|  +-------------------------------+    +---------------------------------------------------------+  |
+|         |                                            |                                             |
+|         +---------------------+----------------------+                                             |
+|                               |                                                            |
+|                               v                                                            |
+|  +----------------------------------------------------------------------------------------------+  |
+|  | TIER 6: PRESENTATION & SOC WORKBENCH (Desktop Shell & Standalone Web)                        |  |
+|  | * Electron Native Shell (main.js) / Browser Web Application (client/index.html & app.js)     |  |
+|  | * Live KPI Cards with Audit Formulas     * Interactive Plotly Charts (Line, Stacked Bar)    |  |
+|  | * Multi-Dimensional Filter Controls       * Natural Language Text-to-Chart Copilot Bar       |  |
+|  +----------------------------------------------------------------------------------------------+  |
++----------------------------------------------------------------------------------------------------+
+```
 
-### Tier 3: Analytics and Certified Columnar Storage Tier
-The certified storage layer is managed by an embedded DuckDB columnar database stored at data/cyber_metrics.duckdb:
-- Five physical base tables: users, firewall_logs, logins, endpoint_alerts, and unified_telemetry.
-- Five certified materialized views: v_dept_login_failure_trend, v_failed_login_rate, v_insider_risk_score, v_firewall_action_by_protocol, and v_endpoint_alerts_by_severity.
-- Tamper-evident SHA-256 audit digest generated across table row counts and schema configurations.
+### End-to-End System Architecture (Mermaid)
 
-### Tier 4: Unified Multi-Agent Analytics Hive
-The analytics hive is implemented in agents/data_agents.py and contains 16 autonomous agents organized into two specialized divisions:
-- Data Science Division (12 Agents): DataLoaderToolsAgent, DataCleaningAgent, FeatureEngineeringAgent, DataWranglingAgent, SQLDatabaseAgent, SQLDataAnalyst, PandasDataAnalyst, DataVisualizationAgent, EDAToolsAgent, ModelEvaluationAgent, WorkflowPlannerAgent, and SupervisorDataScienceTeam.
-- Zero-Trust Security Division (4 Agents): NetworkAgent, IdentityAgent, ThreatAgent, and ImputationAgent.
+```mermaid
+graph TD
+    subgraph S1["Raw Telemetry Sources"]
+        F1["track2_identity_asset_master.csv<br/>(3,090 rows)"]
+        F2["track2_firewall_logs.csv<br/>(30,600 rows)"]
+        F3["track2_iam_audit_trail.json<br/>(20,500 rows)"]
+        F4["track2_endpoint_alerts.xlsx<br/>(8,240 rows)"]
+    end
 
-### Tier 5: Backend Integration Server and JCode Runtime
-The integration server is implemented in src/server.js and src/jcodeService.js:
-- Asynchronous Node.js HTTP server running on port 8080.
-- Python subprocess bridge for executing DuckDB analytics, pipeline runs, and agent queries.
-- JCode vendored agent runtime integration (vendor/jcode) providing native Rust execution, telemetry tracking, and socket-based client communication.
+    subgraph S2["Tier 1 & Tier 2: Ingestion & Data Rescue Pipeline (agents/pipeline.py)"]
+        P1["Multi-Format Parser<br/>(CSV, JSON, openpyxl)"]
+        H1["Truncated-IP Reconstruction<br/>(reconstruct_ip_heuristic)"]
+        H2["Temporal Session Reconciliation<br/>(reconcile_firewall_sessions)"]
+        H3["Unstructured AV Regex Parser<br/>(parse_edr_description)"]
+        H4["Dual-Pass Timestamp Normalization<br/>(normalize_timestamp)"]
+        H5["Unicode NFC & Casing Sanitizer<br/>(sanitize_unicode_nfc)"]
+        H6["Impossible Resolution Anomaly Tagger<br/>(flag_impossible_resolution)"]
+    end
 
-### Tier 6: User Interface and SOC Workbench Presentation
-The presentation layer operates as both a native desktop application (Electron shell via main.js) and a browser-based web application (client/index.html, client/app.js, client/style.css):
-- Live KPI Metric Cards displaying real-time aggregated metrics with visible mathematical formulas.
-- Multi-dimensional filter controls for Department, Hostname, Severity Tier, and Date Range.
-- Interactive Plotly multi-line charts and stacked distribution bar charts.
-- Natural language Text-to-Chart Copilot bar allowing on-demand chart generation.
-- Workspace file tree browser and external dataset importer.
+    subgraph S3["Tier 3: Certified Columnar Storage (data/cyber_metrics.duckdb)"]
+        T1[("users<br/>(3,090 rows)")]
+        T2[("firewall_logs<br/>(30,600 rows)")]
+        T3[("logins<br/>(20,500 rows)")]
+        T4[("endpoint_alerts<br/>(8,240 rows)")]
+        T5[("unified_telemetry<br/>(3,090 rows)")]
+        V1["Certified Materialized Views<br/>(5 analytical views)"]
+        R1["SHA-256 Cryptographic Receipt"]
+    end
+
+    subgraph S4["Tier 4: Multi-Agent Analytics Hive (agents/data_agents.py)"]
+        SUP["SupervisorDataScienceTeam"]
+        DS["Data Science Division<br/>(12 Agents: DataLoader, Cleaning, SQL, Feature, EDA...)"]
+        SEC["Zero-Trust Security Division<br/>(4 Agents: Network, Identity, Threat, Imputation)"]
+        T2C["Text-to-Chart Copilot Agent<br/>(agents/chartAgent.py)"]
+    end
+
+    subgraph S5["Tier 5: Backend Integration Server (src/server.js & src/jcodeService.js)"]
+        SRV["Node.js HTTP Server<br/>(Port 8080)"]
+        PY_BR["Python Subprocess Runner<br/>(spawn, stdio JSON)"]
+        JC_BR["JCode Service & API Bridge<br/>(vendor/jcode Rust runtime)"]
+        SSE["Server-Sent Events Stream<br/>(/api/sessions/:id/events)"]
+    end
+
+    subgraph S6["Tier 6: SOC Workbench Presentation"]
+        EL["Electron Desktop Shell<br/>(main.js)"]
+        WEB["Browser Interface<br/>(client/index.html & app.js)"]
+        KPI["Formula-Audited KPI Cards"]
+        PLT["Interactive Plotly Charts"]
+        COP["Text-to-Chart Copilot UI"]
+        FLT["Dynamic Filters<br/>(Dept, Host, Severity, Date)"]
+    end
+
+    F1 & F2 & F3 & F4 --> P1
+    P1 --> H1 & H2 & H3 & H4 & H5 & H6
+    H1 & H2 & H3 & H4 & H5 & H6 --> T1 & T2 & T3 & T4 & T5
+    T1 & T2 & T3 & T4 & T5 --> V1
+    T1 & T2 & T3 & T4 & T5 --> R1
+
+    V1 & T5 --> SUP
+    SUP --> DS & SEC
+    V1 --> T2C
+
+    SRV --> PY_BR
+    SRV --> JC_BR
+    JC_BR --> SSE
+
+    PY_BR -->|Executes| S2
+    PY_BR -->|Executes| S4
+    PY_BR -->|Executes| T2C
+    PY_BR -->|Executes| AE["analytics_engine.py"]
+    AE --> V1
+
+    EL --> SRV
+    WEB --> SRV
+    SSE --> WEB
+    SRV --> KPI & PLT & COP & FLT
+```
+
+### Detailed Operational Tier Breakdown
+
+#### Tier 1: Ingestion Tier
+The ingestion tier handles raw, heterogeneous enterprise telemetry across disparate serialization formats without requiring manual pre-processing:
+- **Identity and Asset Master**: 3,090 employee records in CSV format (`track2_identity_asset_master.csv`).
+- **Perimeter Firewall Telemetry**: 30,600 network connection records in CSV format (`track2_firewall_logs.csv`).
+- **IAM Authentication Audit Trail**: 20,500 access transactions in JSON array format (`track2_iam_audit_trail.json`).
+- **EDR Endpoint Threat Alerts**: 8,240 security alert events in Excel format (`track2_endpoint_alerts.xlsx`).
+- **Ingestion Engine**: Memory-efficient chunked parsing via Pandas and OpenPyXL with defensive schema detection.
+
+#### Tier 2: Data Rescue and Normalization Engine
+Implemented in `agents/pipeline.py`, this tier enforces a strict zero-data-loss guarantee (100% row survival) using six deterministic recovery heuristics:
+- **Truncated-IP Reconstruction**: Synthesizes `.1` gateway octets for truncated 3-octet private IPs (e.g., `10.232.175` -> `10.232.175.1`); validates 0-255 numerical bounds and tags invalid addresses with `src_ip_valid = False` without dropping rows.
+- **Cross-Trail Temporal Session Reconciliation**: Resolves 18,400+ firewall records missing session IDs by executing a +/- 5-minute temporal window join against concurrent IAM logins on matching hostnames.
+- **Unstructured Antivirus Alert Regex Parser**: Extracts canonical severity tiers (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), workstation hostnames (`LPT-#####`, `SRV-#####`), and signature identifiers (`SIG_...`, CVE codes) from free-text descriptions.
+- **Dual-Pass Timestamp Normalization**: Standardizes ISO-8601, US slash dates, European slash dates, hyphenated strings, and Unix epoch seconds into UTC ISO-8601 (`YYYY-MM-DDTHH:MM:SS`).
+- **Multilingual Unicode NFC Sanitization**: Normalizes employee full names and text fields to Unicode Normalization Form C, stripping non-printable control bytes and normalizing casing.
+- **Impossible Resolution Timestamp Detection**: Flags alerts where resolution timestamps precede detection timestamps (`impossible_resolution = 1`) while preserving the record for audit.
+
+#### Tier 3: Analytics and Certified Columnar Storage Tier
+Managed by an embedded DuckDB columnar database stored at `data/cyber_metrics.duckdb`:
+- **Physical Base Tables**: `users` (3,090 rows), `firewall_logs` (30,600 rows), `logins` (20,500 rows), `endpoint_alerts` (8,240 rows), and `unified_telemetry` (3,090 rows).
+- **Certified Materialized Views**:
+  1. `v_dept_login_failure_trend`: Time-series failure trends by department.
+  2. `v_failed_login_rate`: Enterprise authentication failure rate by department and method.
+  3. `v_insider_risk_score`: Weighted multi-vector insider threat risk ranking.
+  4. `v_firewall_action_by_protocol`: Policy actions (ALLOW/DENY) grouped by TCP, UDP, and ICMP.
+  5. `v_endpoint_alerts_by_severity`: Open, in-progress, and resolved alerts by severity tier.
+- **Cryptographic Audit Digest**: Automated SHA-256 hash calculation across database schemas and row counts guaranteeing tamper-evidence.
+
+#### Tier 4: Unified Multi-Agent Analytics Hive
+Implemented in `agents/data_agents.py` and `agents/chartAgent.py`, the hive organizes 16 autonomous agents under a centralized supervisor pattern:
+- **Data Science Division (12 Agents)**: `DataLoaderToolsAgent`, `DataCleaningAgent`, `FeatureEngineeringAgent`, `DataWranglingAgent`, `SQLDatabaseAgent`, `SQLDataAnalyst`, `PandasDataAnalyst`, `DataVisualizationAgent`, `EDAToolsAgent`, `ModelEvaluationAgent`, `WorkflowPlannerAgent`, and `SupervisorDataScienceTeam`.
+- **Zero-Trust Security Division (4 Agents)**: `NetworkAgent` (IP reconstruction and protocol routing), `IdentityAgent` (EMP ID canonicalization), `ThreatAgent` (AV alert regex parsing), and `ImputationAgent` (zero-drop statistical imputation).
+- **Text-to-Chart Copilot Agent**: Natural language intent router that translates user questions into DuckDB SQL, generates Plotly.js chart configurations, and delivers an executive threat briefing.
+
+#### Tier 5: Backend Integration Server and JCode Runtime
+Implemented in `src/server.js`, `src/jcodeService.js`, and `vendor/jcode`:
+- **Node.js HTTP Server**: Asynchronous server listening on port 8080 (configurable via `PORT`).
+- **REST API Endpoints**: Full routing for dashboard metrics (`/api/analytics/dashboard`), chart queries (`/api/agent/chart`), pipeline runs (`/api/pipeline/run`), file uploads (`/api/upload`), and agent execution (`/api/agent/run`).
+- **Server-Sent Events (SSE)**: Streaming endpoint at `/api/sessions/:id/events` dispatching real-time tool events, token deltas, and chart payload readiness.
+- **Subprocess Bridge**: Subprocess invocation of Python agents (`agents/pipeline.py`, `agents/chartAgent.py`, `agents/analytics_engine.py`) with stdio JSON piping.
+- **JCode Rust Runtime**: Vendored native agent daemon (`jcode.exe serve`) and API bridge (`jcode-harness-api-bridge.exe`) providing low-latency local execution and session tracking.
+
+#### Tier 6: User Interface and SOC Workbench Presentation
+Operates as both a native desktop application (Electron shell via `main.js`) and a browser application (`client/index.html`, `client/app.js`, `client/style.css`):
+- **Live Formula-Audited KPI Cards**: Real-time aggregated metrics displaying explicit mathematical formulas for auditing transparency.
+- **Multi-Dimensional Filter Controls**: Instant filtering across Department (10 canonical units), Hostname search, Severity tier, and Calendar Date range.
+- **Interactive Plotly Visualizations**: Responsive multi-line trend charts and stacked distribution bar charts.
+- **Text-to-Chart Copilot Bar**: Interactive natural language input that dynamically generates charts and streams threat intelligence summaries.
+- **Workspace File Browser & Dataset Importer**: Drag-and-drop file upload with automated pipeline execution.
+
+---
+
+### Ingestion & Data Rescue Pipeline Flow (Sequence Diagram)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CLI as Operator / CLI
+    participant Pipeline as agents/pipeline.py
+    participant Datasets as Raw Files (data/*)
+    participant Heuristics as Data Rescue Heuristics
+    participant DuckDB as data/cyber_metrics.duckdb
+    participant Audit as docs/ (Receipt & Reports)
+
+    CLI->>Pipeline: npm run pipeline (or python agents/pipeline.py)
+    Pipeline->>Datasets: Ingest 4 raw files (CSV, JSON, XLSX)
+    Datasets-->>Pipeline: 62,430 raw records loaded
+    Pipeline->>Heuristics: Apply 6 deterministic recovery algorithms
+    Note over Heuristics: IP Reconstruction | Session Join | AV Regex<br/>Timestamp Normalization | NFC Sanitization | Impossible Resolution
+    Heuristics-->>Pipeline: 62,430 clean records (0 dropped)
+    Pipeline->>DuckDB: Materialize 5 physical tables & unified_telemetry
+    Pipeline->>DuckDB: Compile 5 certified analytical views
+    Pipeline->>Pipeline: Calculate SHA-256 cryptographic digest
+    Pipeline->>Audit: Write data_dictionary.txt & CLEANING_REPORT.txt
+    Pipeline-->>CLI: Verification receipt emitted (Exit 0)
+```
+
+---
+
+### Text-to-Chart Copilot Execution Flow (Sequence Diagram)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Analyst as SOC Analyst (UI)
+    participant Frontend as client/app.js
+    participant Server as src/server.js
+    participant Copilot as agents/chartAgent.py
+    participant DuckDB as data/cyber_metrics.duckdb
+
+    Analyst->>Frontend: Enter prompt: "Show the trend of failed login attempts by department over the last 7 days."
+    Frontend->>Server: POST /api/sessions/:id/prompt
+    Server->>Copilot: Spawn chartAgent.py with natural language query
+    Copilot->>Copilot: Classify intent -> line chart against v_dept_login_failure_trend
+    Copilot->>DuckDB: Execute certified analytical SQL query
+    DuckDB-->>Copilot: Return time-series dataset
+    Copilot->>Copilot: Construct Plotly.js chart spec & executive threat briefing
+    Copilot-->>Server: Return JSON payload (chart, summary, chart_type)
+    Server-->>Frontend: Stream SSE events: tool_done, text_delta, chart_ready
+    Frontend->>Analyst: Render dynamic Plotly chart and display analyst summary
+```
+
+---
+
+### Runtime Topology and Process Isolation
+
+```
++-------------------------------------------------------------------------------+
+|                             RUNTIME TOPOLOGY & IPC                            |
++-------------------------------------------------------------------------------+
+|                                                                               |
+|  [ Electron Desktop Shell ] (Process 1)                                       |
+|  - main.js (Main Process)                                                     |
+|  - BrowserWindow (Chromium Renderer, contextIsolation: true)                  |
+|        |                                                                      |
+|        | HTTP REST (Port 8080) & SSE Stream                                   |
+|        v                                                                      |
+|  [ Node.js Integration Server ] (Process 2)                                   |
+|  - src/server.js (HTTP / Static Assets / REST API)                            |
+|  - src/jcodeService.js (Session & Event Hub)                                  |
+|        |                                                                      |
+|        +-----------------------------------+                                  |
+|        |                                   |                                  |
+|        | Subprocess (stdio JSON)           | Named Pipes / TCP Socket         |
+|        v                                   v                                  |
+|  [ Python Subprocess Bridge ]       [ JCode Agent Runtime ]                   |
+|  - agents/pipeline.py               - vendor/jcode/target/debug/jcode.exe     |
+|  - agents/analytics_engine.py       - vendor/jcode/target/debug/              |
+|  - agents/chartAgent.py               jcode-harness-api-bridge.exe            |
+|  - agents/data_agents.py            - Rust async daemon                       |
+|        |                                   |                                  |
+|        | Vectorized C++ Queries            | Telemetry Streaming              |
+|        +-----------------+-----------------+                                  |
+|                          |                                                    |
+|                          v                                                    |
+|            [ Embedded DuckDB Database ]                                       |
+|            - data/cyber_metrics.duckdb                                        |
+|            - 5 Columnar tables & 5 certified views                            |
+|                                                                               |
++-------------------------------------------------------------------------------+
+```
 
 ---
 
