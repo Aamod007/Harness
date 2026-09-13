@@ -22,7 +22,6 @@ document.addEventListener('DOMContentLoaded', () => {
         isGenerating: false,
         eventSource: null,
         tools: new Map(), // call_id -> { name, input, output, error, status }
-        dashboardData: null,
         attachedFiles: [],
         composerMode: 'Ask',
     };
@@ -42,7 +41,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const streamModel = $('#stream-model');
     const streamText = $('#stream-text');
     const reasoningBlock = $('#reasoning-block');
+    const reasoningHeader = $('#reasoning-header');
+    const reasoningTitle = $('#reasoning-title');
+    const reasoningBadge = $('#reasoning-badge');
+    const reasoningDot = $('#reasoning-dot');
+    const reasoningMeta = $('#reasoning-meta');
+    const reasoningToggle = $('#reasoning-toggle');
+    const reasoningContent = $('#reasoning-content');
     const reasoningText = $('#reasoning-text');
+
+    let accumulatedReasoning = '';
+    let isThinkingActive = false;
+    let thinkingStartTime = null;
+    let reasoningInTextDelta = false;
+
+    function toggleReasoningCollapse(force) {
+        if (!reasoningBlock) return;
+        const shouldCollapse = force !== undefined ? force : !reasoningBlock.classList.contains('collapsed');
+        reasoningBlock.classList.toggle('collapsed', shouldCollapse);
+    }
+
+    if (reasoningHeader) {
+        reasoningHeader.addEventListener('click', () => {
+            toggleReasoningCollapse();
+        });
+        reasoningHeader.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleReasoningCollapse();
+            }
+        });
+    }
+    if (reasoningToggle) {
+        reasoningToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleReasoningCollapse();
+        });
+    }
     const toolActivity = $('#tool-activity');
     const toolCount = $('#tool-count');
     const toolActivityList = $('#tool-activity-list');
@@ -82,19 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const workspaceDiffToggle = $('#workspace-diff-toggle');
     const sessionsView = $('#sessions-view');
     const workspaceEditor = $('#workspace-editor');
-    const dashboardView = $('#dashboard-view');
-    const filterDept = $('#dash-filter-department');
-    const filterHost = $('#dash-filter-host');
-    const filterSeverity = $('#dash-filter-severity');
-    const filterStartDate = $('#dash-filter-start-date');
-    const filterEndDate = $('#dash-filter-end-date');
-    const applyFiltersBtn = $('#apply-filters-btn');
-    const resetFiltersBtn = $('#reset-filters-btn');
-    const refreshDashboardBtn = $('#refresh-dashboard-btn');
-    const dashboardDatasetSelect = $('#dashboard-dataset-select');
-    const tableSearchInput = $('#table-search-input');
-    const telemetryTableBody = $('#telemetry-table-body');
-    const recordCountBadge = $('#record-count-badge');
     const editorTabstrip = $('#editor-tabstrip');
     const editorPanel = $('#editor-panel');
     const sidebarResizer = $('.sidebar-resizer');
@@ -268,22 +290,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (tab === 'sessions') {
             hideWorkspaceEditor();
-            if (dashboardView) {
-                dashboardView.hidden = true;
-                dashboardView.classList.remove('active');
-            }
             sessionsView.hidden = false;
             sessionsView.classList.add('active');
-        }
-        if (tab === 'dashboard') {
-            hideWorkspaceEditor();
-            sessionsView.hidden = true;
-            sessionsView.classList.remove('active');
-            if (dashboardView) {
-                dashboardView.hidden = false;
-                dashboardView.classList.add('active');
-                loadDashboard(getFilterValues());
-            }
         }
         if (tab === 'workspace' && !state.workspace) loadWorkspace();
         if (tab === 'agents') renderLibrarySidebar();
@@ -461,7 +469,19 @@ document.addEventListener('DOMContentLoaded', () => {
             streamText.textContent = '';
         }
         reasoningBlock.classList.add('hidden');
+        reasoningBlock.classList.remove('collapsed');
         reasoningText.textContent = '';
+        accumulatedReasoning = '';
+        isThinkingActive = false;
+        thinkingStartTime = null;
+        reasoningInTextDelta = false;
+        if (reasoningDot) reasoningDot.className = 'reasoning-dot';
+        if (reasoningBadge) {
+            reasoningBadge.className = 'reasoning-badge';
+            reasoningBadge.textContent = 'STREAMING';
+        }
+        if (reasoningTitle) reasoningTitle.textContent = 'MODEL THINKING';
+        if (reasoningMeta) reasoningMeta.textContent = '';
         toolActivity.classList.add('hidden');
         toolActivityList.replaceChildren();
         toolCount.textContent = '0';
@@ -576,6 +596,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="kpi-badge badge-success" style="font-size: 9px; padding: 2px 8px; background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3);">JCODE PROCESSED</span>
                 </div>`;
 
+
         if (strategyNote) {
             html += `
                 <div style="margin-bottom: 12px; padding: 8px 12px; background: rgba(99, 102, 241, 0.08); border-left: 3px solid #818cf8; border-radius: 4px; font-size: 11px; color: var(--ink);">
@@ -658,20 +679,103 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (ev === 'text_delta') {
             streamCard.classList.remove('hidden');
-            activeOutput().textContent += event.text;
+            let rawText = event.text || '';
+
+            // Handle models that stream <think> ... </think> blocks in text_delta
+            if (rawText.includes('<think>')) {
+                reasoningInTextDelta = true;
+                streamCard.classList.remove('hidden');
+                reasoningBlock.classList.remove('hidden');
+                isThinkingActive = true;
+                if (!thinkingStartTime) thinkingStartTime = Date.now();
+                if (reasoningDot) reasoningDot.className = 'reasoning-dot';
+                if (reasoningBadge) {
+                    reasoningBadge.className = 'reasoning-badge';
+                    reasoningBadge.textContent = 'STREAMING';
+                }
+                if (reasoningTitle) reasoningTitle.textContent = 'MODEL THINKING';
+
+                const parts = rawText.split('<think>');
+                if (parts[0]) activeOutput().textContent += parts[0];
+                rawText = parts[1] || '';
+            }
+
+            if (reasoningInTextDelta) {
+                if (rawText.includes('</think>')) {
+                    const parts = rawText.split('</think>');
+                    accumulatedReasoning += parts[0];
+                    reasoningText.textContent = accumulatedReasoning;
+
+                    reasoningInTextDelta = false;
+                    isThinkingActive = false;
+                    const elapsed = thinkingStartTime ? ((Date.now() - thinkingStartTime) / 1000).toFixed(1) : '0.0';
+                    const words = accumulatedReasoning.trim().split(/\s+/).filter(Boolean).length;
+                    if (reasoningDot) reasoningDot.className = 'reasoning-dot done';
+                    if (reasoningBadge) {
+                        reasoningBadge.className = 'reasoning-badge done';
+                        reasoningBadge.textContent = 'COMPLETED';
+                    }
+                    if (reasoningTitle) reasoningTitle.textContent = 'THOUGHT PROCESS';
+                    if (reasoningMeta) reasoningMeta.textContent = `${words} words • ${elapsed}s`;
+
+                    if (parts[1]) activeOutput().textContent += parts[1];
+                } else {
+                    accumulatedReasoning += rawText;
+                    reasoningText.textContent = accumulatedReasoning;
+                    const words = accumulatedReasoning.trim().split(/\s+/).filter(Boolean).length;
+                    const elapsed = thinkingStartTime ? ((Date.now() - thinkingStartTime) / 1000).toFixed(1) : '0.0';
+                    if (reasoningMeta) reasoningMeta.textContent = `${words} words • ${elapsed}s`;
+                    if (reasoningContent) reasoningContent.scrollTop = reasoningContent.scrollHeight;
+                }
+                return;
+            }
+
+            activeOutput().textContent += rawText;
             return;
         }
 
         if (ev === 'reasoning_delta') {
             streamCard.classList.remove('hidden');
             reasoningBlock.classList.remove('hidden');
-            reasoningText.textContent += event.text;
+            if (!isThinkingActive) {
+                isThinkingActive = true;
+                if (!thinkingStartTime) thinkingStartTime = Date.now();
+                if (reasoningDot) reasoningDot.className = 'reasoning-dot';
+                if (reasoningBadge) {
+                    reasoningBadge.className = 'reasoning-badge';
+                    reasoningBadge.textContent = 'STREAMING';
+                }
+                if (reasoningTitle) reasoningTitle.textContent = 'MODEL THINKING';
+            }
+
+            const chunk = event.text || event.delta || '';
+            accumulatedReasoning += chunk;
+            reasoningText.textContent = accumulatedReasoning;
+
+            const words = accumulatedReasoning.trim().split(/\s+/).filter(Boolean).length;
+            const elapsed = ((Date.now() - thinkingStartTime) / 1000).toFixed(1);
+            if (reasoningMeta) reasoningMeta.textContent = `${words} words • ${elapsed}s`;
+
+            if (reasoningContent) {
+                reasoningContent.scrollTop = reasoningContent.scrollHeight;
+            }
             return;
         }
 
         if (ev === 'reasoning_done') {
-            const dur = event.duration_secs ? ` (${event.duration_secs.toFixed(1)}s)` : '';
-            $('.reasoning-title').textContent = `Thinking complete${dur}`;
+            isThinkingActive = false;
+            const elapsed = event.duration_secs
+                ? event.duration_secs.toFixed(1)
+                : (thinkingStartTime ? ((Date.now() - thinkingStartTime) / 1000).toFixed(1) : '0.0');
+            const words = accumulatedReasoning.trim().split(/\s+/).filter(Boolean).length;
+
+            if (reasoningDot) reasoningDot.className = 'reasoning-dot done';
+            if (reasoningBadge) {
+                reasoningBadge.className = 'reasoning-badge done';
+                reasoningBadge.textContent = 'COMPLETED';
+            }
+            if (reasoningTitle) reasoningTitle.textContent = 'THOUGHT PROCESS';
+            if (reasoningMeta) reasoningMeta.textContent = `${words} words • ${elapsed}s`;
             return;
         }
 
@@ -762,7 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (event.summary) {
                 answerSummary.innerHTML = event.summary.replace(/\n/g, '<br>');
             }
-            answerModel.textContent = 'DuckDB Certified Analytical View (Text-to-Chart Copilot)';
+            answerModel.textContent = 'Agent-created result';
             return;
         }
 
@@ -798,7 +902,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSessions();
 
         sessionHeading.textContent = cleanSessionTitle(selected?.subject) || 'New Session';
-        setStatus('Ready — Ask JCode a question, dispatch a data role, or import a dataset.');
+        setStatus('Ready — attach a dataset and tell the agent what to do with it.');
         clearStreamOutput();
 
         // Connect real-time event stream
@@ -904,7 +1008,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let fullPrompt = text ? `[${state.composerMode} mode] ${text}` : `[${state.composerMode} mode] Review the attached files.`;
         if (activeFiles.length) {
-            fullPrompt = `[Attached Files: ${activeFiles.map(f => f.name).join(', ')}]\n${fullPrompt}`;
+            fullPrompt = `[Attached Files: ${activeFiles.map(f => `data/${f.name}`).join(', ')}]\n${fullPrompt}`;
         }
 
         try {
@@ -1195,12 +1299,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="sidebar-agent-card" style="border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; background: var(--canvas-light);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                     <strong style="font-size: 11px; color: var(--ink);">${esc(role.name || role.title)}</strong>
-                    <span class="kpi-badge badge-info" style="font-size: 8px;">ROUTING ROLE</span>
+                    <span class="kpi-badge badge-info" style="font-size: 8px;">WORKFLOW REFERENCE</span>
                 </div>
                 <p style="font-size: 10px; color: var(--muted); margin: 0 0 6px 0; line-height: 1.3;">${esc(role.description || role.category || '')}</p>
                 <div style="display: flex; gap: 4px;">
-                    <button type="button" class="plain-button run-agent-btn" data-agent-id="${esc(role.id || '')}" data-agent-name="${esc(role.name || role.title)}" style="font-size: 9px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; flex: 1; text-align: center; background: rgba(99,102,241,0.1); color: #818cf8;">RUN ON JCODE</button>
-                    <button type="button" class="plain-button use-agent-btn" data-agent-id="${esc(role.id || '')}" data-agent-name="${esc(role.name || role.title)}" style="font-size: 9px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; flex: 1; text-align: center;">PROMPT JCODE</button>
+                    <button type="button" class="plain-button use-agent-btn" data-agent-id="${esc(role.id || '')}" data-agent-name="${esc(role.name || role.title)}" style="font-size: 9px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; flex: 1; text-align: center; background: rgba(99,102,241,0.1); color: #818cf8;">USE WITH JCODE</button>
                 </div>
             </div>
         `).join('');
@@ -1208,36 +1311,12 @@ document.addEventListener('DOMContentLoaded', () => {
         $$('.use-agent-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const name = btn.dataset.agentName;
-                promptInput.value = `Route to JCode [${name}]: Process zero-trust metrics and identify anomalies.`;
+                promptInput.value = `Inspect the Agents tab code and use ${name} only if it is the best fit for my attached dataset. Execute my requested analysis and report the actual outputs.`;
                 switchSidebarTab('sessions');
                 promptInput.focus();
             });
         });
 
-        $$('.run-agent-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const agentId = btn.dataset.agentId;
-                const agentName = btn.dataset.agentName;
-                if (!agentId) return;
-                switchSidebarTab('sessions');
-                streamCard.classList.remove('hidden');
-                streamBadge.textContent = 'RUNNING';
-                streamBadge.classList.remove('idle');
-                streamText.innerHTML = `<em>JCode processing <strong>${esc(agentName)}</strong> task end-to-end...</em>`;
-                showLoading();
-                try {
-                    const res = await api('POST', '/api/agent/run', { agentId });
-                    streamBadge.textContent = 'READY';
-                    streamBadge.classList.add('idle');
-                    streamText.innerHTML = formatAgentOutputHtml(agentName, res.result);
-                } catch (err) {
-                    streamText.innerHTML = `<p style="color: #f85149;">Error on JCode processing ${esc(agentName)}: ${esc(err.message)}</p>`;
-                    showToast(`Cipher could not run ${agentName}: ${err.message}`);
-                } finally {
-                    hideLoading();
-                }
-            });
-        });
     }
 
     async function refreshStatus() {
@@ -1340,124 +1419,6 @@ document.addEventListener('DOMContentLoaded', () => {
     saveApiKeyButton.addEventListener('click', saveApiKey);
     checkLmStudioButton.addEventListener('click', refreshLmStudioStatus);
 
-    let currentRecords = [];
-
-    function getFilterValues() {
-        return {
-            department: filterDept ? filterDept.value : 'All',
-            host: filterHost ? filterHost.value.trim() : '',
-            severity: filterSeverity ? filterSeverity.value : 'All',
-            startDate: filterStartDate ? filterStartDate.value : '',
-            endDate: filterEndDate ? filterEndDate.value : '',
-        };
-    }
-
-    async function loadDashboard(filters = {}) {
-        showLoading();
-        try {
-            const data = await api('POST', '/api/analytics/dashboard', filters);
-            state.dashboardData = data;
-            renderDashboard(data);
-        } catch (err) {
-            console.error('[Dashboard load error]:', err);
-        } finally {
-            hideLoading();
-        }
-    }
-
-    function renderDashboard(data) {
-        if (!data) return;
-        const empty = data.status !== 'success';
-        $('#dashboard-subtitle').textContent = empty ? (data.message || 'Upload a dataset to begin.') : `Source: ${data.dataset_names.join(', ')}`;
-        if (!empty && dashboardDatasetSelect) {
-            const selected = data.dataset_names[0];
-            dashboardDatasetSelect.innerHTML = data.available_datasets.map(name => `<option value="${esc(name)}" ${name === selected ? 'selected' : ''}>${esc(name)}</option>`).join('');
-        }
-        $('#kpi-rows').textContent = empty ? '--' : fmt(data.rows);
-        $('#kpi-columns').textContent = empty ? '--' : fmt(data.columns.length);
-        $('#kpi-missing').textContent = empty ? '--' : fmt(data.missing);
-        $('#kpi-numeric').textContent = empty ? '--' : fmt(data.numeric_columns);
-        if (!empty && window.Plotly && data.charts) {
-            const config = { responsive: true, displayModeBar: false };
-            if ($('#chart-numeric')) {
-                Plotly.newPlot('chart-numeric', data.charts.numeric.data, data.charts.numeric.layout, config);
-            }
-            if ($('#chart-category')) {
-                Plotly.newPlot('chart-category', data.charts.category.data, data.charts.category.layout, config);
-            }
-        }
-
-        currentRecords = empty ? [] : data.records || [];
-        renderTableRecords(currentRecords, empty ? [] : data.columns);
-    }
-
-    function renderTableRecords(records, columns = state.dashboardData?.columns || []) {
-        if (!telemetryTableBody) return;
-        if (recordCountBadge) recordCountBadge.textContent = `${records.length} records`;
-        const head = $('#telemetry-table-head');
-        if (head) head.innerHTML = columns.length ? `<tr>${columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr>` : '';
-        if (!records.length) {
-            telemetryTableBody.innerHTML = `<tr><td colspan="${Math.max(1, columns.length)}" class="table-loading">Upload a dataset to view its records.</td></tr>`;
-            return;
-        }
-        telemetryTableBody.innerHTML = records.map(r => `
-            <tr>
-                ${columns.map(c => `<td>${esc(r[c] ?? '-')}</td>`).join('')}
-            </tr>
-        `).join('');
-    }
-
-    if (applyFiltersBtn) applyFiltersBtn.addEventListener('click', () => loadDashboard(getFilterValues()));
-    if (refreshDashboardBtn) refreshDashboardBtn.addEventListener('click', () => loadDashboard({ dataset: dashboardDatasetSelect?.value }));
-    if (dashboardDatasetSelect) dashboardDatasetSelect.addEventListener('change', () => loadDashboard({ dataset: dashboardDatasetSelect.value }));
-    if (resetFiltersBtn) resetFiltersBtn.addEventListener('click', () => {
-        if (filterDept) filterDept.value = 'All';
-        if (filterHost) filterHost.value = '';
-        if (filterSeverity) filterSeverity.value = 'All';
-        if (filterStartDate) filterStartDate.value = '';
-        if (filterEndDate) filterEndDate.value = '';
-        loadDashboard({});
-    });
-    if (filterDept) filterDept.addEventListener('change', () => loadDashboard(getFilterValues()));
-    if (filterSeverity) filterSeverity.addEventListener('change', () => loadDashboard(getFilterValues()));
-    if (filterHost) filterHost.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadDashboard(getFilterValues()); });
-
-    if (tableSearchInput) {
-        tableSearchInput.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase().trim();
-            if (!query) {
-                renderTableRecords(currentRecords);
-                return;
-            }
-            const filtered = currentRecords.filter(r => 
-                (r.user_id && r.user_id.toLowerCase().includes(query)) ||
-                (r.hostname && r.hostname.toLowerCase().includes(query)) ||
-                (r.department && r.department.toLowerCase().includes(query)) ||
-                (r.event_or_action && r.event_or_action.toLowerCase().includes(query))
-            );
-            renderTableRecords(filtered);
-        });
-    }
-
-    $('#run-pipeline-button').addEventListener('click', async () => {
-        closeMenus();
-        showLoading();
-        setStatus('Executing full data rescue pipeline (pipeline.py)...');
-        try {
-            await api('POST', '/api/pipeline/run');
-            showToast('Pipeline executed successfully. DuckDB is updated.', 'success');
-            if (state.activeSidebarTab === 'dashboard') {
-                loadDashboard(getFilterValues());
-            }
-            await loadWorkspace();
-        } catch (err) {
-            showToast(`Pipeline execution error: ${err.message}`);
-        } finally {
-            hideLoading();
-            setStatus('Ready');
-        }
-    });
-
     if (fileUploadInput) {
         fileUploadInput.addEventListener('change', async (e) => {
             const files = Array.from(e.target.files || []);
@@ -1499,9 +1460,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (res.ok) {
                         const result = await res.json();
                         await loadWorkspace();
-                        await loadDashboard();
-                        const rowMsg = result.clean_total ? ` (${result.clean_total.toLocaleString()} rows processed)` : '';
-                        setStatus(`Dataset imported & analyzed successfully!${rowMsg}`);
+                        setStatus('Dataset attached. Tell the agent what you want to analyze, clean, or create.');
                     }
                 } catch (err) {
                     console.warn('[Import error]:', err);

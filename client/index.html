@@ -23,7 +23,6 @@
 
             <nav class="sidebar-tabs" aria-label="Sidebar sections">
                 <button class="sidebar-tab active" type="button" data-sidebar-tab="sessions" aria-selected="true">TASKS</button>
-                <button class="sidebar-tab" type="button" data-sidebar-tab="dashboard" aria-selected="false">DATA</button>
                 <button class="sidebar-tab" type="button" data-sidebar-tab="workspace" aria-selected="false">FILES</button>
                 <button class="sidebar-tab" type="button" data-sidebar-tab="agents" aria-selected="false">AGENTS</button>
             </nav>
@@ -32,11 +31,6 @@
                 <section class="sidebar-view active" id="sidebar-sessions-view" aria-label="Recent agent sessions">
                     <div class="side-label-row"><span>RECENT TASKS</span><span class="session-total" id="session-count">0</span></div>
                     <div id="session-list" class="session-list" aria-live="polite"></div>
-                </section>
-
-                <section class="sidebar-view" id="sidebar-dashboard-view" aria-label="Dataset dashboard" hidden>
-                    <div class="side-label-row"><span>DATASET DASHBOARD</span></div>
-                    <p class="workspace-hint">This view is intentionally blank until you attach and upload a dataset in a session. It never uses bundled sample telemetry.</p>
                 </section>
 
                 <section class="sidebar-view" id="sidebar-workspace-view" aria-label="Workspace files" hidden>
@@ -105,8 +99,6 @@
                         <p id="lm-studio-status" class="provider-status">Checking http://127.0.0.1:1234/v1…</p>
                         <button type="button" id="check-lm-studio-button" class="settings-action-btn">Check Local Server</button>
                     </div>
-                    <p class="settings-section-label">WORKSPACE</p>
-                    <button type="button" id="run-pipeline-button">Run cleaning pipeline</button>
                     <button type="button" id="reset-button">Clear sessions</button>
                 </div>
 
@@ -127,7 +119,9 @@
                     </div>
 
                     <div class="starter-prompts" id="starter-prompts">
-                        <button type="button" data-starter-prompt="Profile the attached dataset and identify data quality issues."><span>↗</span> Profile a dataset</button>
+                        <button type="button" data-starter-prompt="Analyze the attached dataset. Profile its schema, identify data quality issues, and report only findings supported by the file."><span>↗</span> Analyze a dataset</button>
+                        <button type="button" data-starter-prompt="Clean the attached dataset and save a new cleaned file. Explain each transformation and preserve the original file."><span>⌁</span> Clean a dataset</button>
+                        <button type="button" data-starter-prompt="Create the chart or map requested from the attached dataset and save it as an artifact in the workspace."><span>◔</span> Create a visual</button>
                         <button type="button" data-starter-prompt="Explain this workspace and recommend the next implementation step."><span>⌘</span> Explore workspace</button>
                         <button type="button" data-starter-prompt="Review the current project for risks and missing tests."><span>✓</span> Review project</button>
                     </div>
@@ -147,15 +141,29 @@
                             <span class="stream-model" id="stream-model"></span>
                         </div>
                         <div class="reasoning-block hidden" id="reasoning-block">
-                            <div class="reasoning-title">Thinking process</div>
-                            <div class="reasoning-text" id="reasoning-text"></div>
+                            <div class="reasoning-header" id="reasoning-header" role="button" tabindex="0" title="Click to toggle thought process">
+                                <div class="reasoning-header-left">
+                                    <span class="reasoning-dot" id="reasoning-dot"></span>
+                                    <span class="reasoning-title" id="reasoning-title">MODEL THINKING</span>
+                                    <span class="reasoning-badge" id="reasoning-badge">STREAMING</span>
+                                </div>
+                                <div class="reasoning-header-right">
+                                    <span class="reasoning-meta" id="reasoning-meta"></span>
+                                    <button type="button" class="reasoning-toggle" id="reasoning-toggle" aria-label="Toggle thinking text">
+                                        <svg class="chevron-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="reasoning-content" id="reasoning-content">
+                                <div class="reasoning-text" id="reasoning-text"></div>
+                            </div>
                         </div>
                         <div class="stream-text" id="stream-text"></div>
                     </div>
 
                     <div class="tool-activity hidden" id="tool-activity">
                         <div class="tool-activity-header">
-                            <span>HARNESS TOOLS</span>
+                            <span>EXECUTION TRACE</span>
                             <span class="tool-activity-count" id="tool-count">0</span>
                         </div>
                         <div class="tool-activity-list" id="tool-activity-list"></div>
@@ -209,48 +217,6 @@
                 </div>
             </section>
 
-            <section class="app-view dashboard-view" id="dashboard-view" aria-label="Dataset dashboard" hidden>
-                <div class="dashboard-container">
-                    <header class="dashboard-header">
-                        <div>
-                            <h1 class="dashboard-title">Dataset dashboard</h1>
-                            <p class="dashboard-subtitle" id="dashboard-subtitle">Upload a dataset from the attachment control to begin.</p>
-                        </div>
-                        <div class="dashboard-header-actions">
-                            <select id="dashboard-dataset-select" class="dashboard-dataset-select" aria-label="Select uploaded dataset"><option>Loading datasets...</option></select>
-                            <button class="plain-button" type="button" id="refresh-dashboard-btn">REFRESH</button>
-                        </div>
-                    </header>
-                    <div class="kpi-grid">
-                        <article class="kpi-card"><div class="kpi-top"><span class="kpi-label">ROWS</span></div><div class="kpi-value" id="kpi-rows">--</div><p class="kpi-desc">Records in the uploaded dataset</p></article>
-                        <article class="kpi-card"><div class="kpi-top"><span class="kpi-label">COLUMNS</span></div><div class="kpi-value" id="kpi-columns">--</div><p class="kpi-desc">Detected fields</p></article>
-                        <article class="kpi-card"><div class="kpi-top"><span class="kpi-label">MISSING VALUES</span></div><div class="kpi-value" id="kpi-missing">--</div><p class="kpi-desc">Blank or null values</p></article>
-                        <article class="kpi-card"><div class="kpi-top"><span class="kpi-label">NUMERIC FIELDS</span></div><div class="kpi-value" id="kpi-numeric">--</div><p class="kpi-desc">Fields available for quantitative analysis</p></article>
-                    </div>
-                    <div class="dashboard-charts-grid">
-                        <div class="dashboard-chart-card chart-span-2">
-                            <div class="chart-header"><h3 id="chart-numeric-title">Numeric distribution</h3><span class="chart-tag">UPLOADED DATA</span></div>
-                            <div id="chart-numeric" class="dash-plot-box"></div>
-                        </div>
-                        <div class="dashboard-chart-card">
-                            <div class="chart-header"><h3 id="chart-category-title">Top categories</h3><span class="chart-tag">UPLOADED DATA</span></div>
-                            <div id="chart-category" class="dash-plot-box"></div>
-                        </div>
-                    </div>
-                    <div class="dashboard-table-card">
-                        <div class="table-card-header">
-                            <div class="table-title-row">
-                                <h3>Dataset preview</h3>
-                                <span class="record-counter" id="record-count-badge">0 records</span>
-                            </div>
-                            <input id="table-search-input" type="text" class="table-search" placeholder="Search uploaded records...">
-                        </div>
-                        <div class="table-responsive">
-                            <table class="detail-table" id="telemetry-table"><thead id="telemetry-table-head"></thead><tbody id="telemetry-table-body"><tr><td class="table-loading">Upload a dataset to view its records.</td></tr></tbody></table>
-                        </div>
-                    </div>
-                </div>
-            </section>
         </main>
         <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
     </div>

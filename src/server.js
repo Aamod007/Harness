@@ -24,7 +24,7 @@ if (fs.existsSync(ENV_FILE)) {
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const PYTHON_BIN = process.env.PYTHON_PATH || 'python';
 const MAX_PAYLOAD_BYTES = parseInt(process.env.MAX_PAYLOAD_BYTES || '', 10) || 5 * 1024 * 1024;
-const DEFAULT_ANALYTICS_QUERY = process.env.DEFAULT_ANALYTICS_QUERY || 'Show the trend of failed login attempts by department over the last 7 days.';
+const DATA_DIR = process.env.DATASET_DIR || path.join(PROJECT_ROOT, 'data');
 const UI_DIR = path.join(PROJECT_ROOT, 'client');
 const LM_STUDIO_BASE_URL = (process.env.LM_STUDIO_BASE_URL || 'http://127.0.0.1:1234/v1').replace(/\/$/, '');
 const activeProvider = { id: 'jcode', model: null };
@@ -101,6 +101,7 @@ function lmStudioChatModels(models = []) {
 async function sendLmStudioPrompt(sessionId, prompt) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
+  const startTime = Date.now();
   try {
     const response = await fetch(`${LM_STUDIO_BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -109,7 +110,7 @@ async function sendLmStudioPrompt(sessionId, prompt) {
       body: JSON.stringify({
         model: activeProvider.model,
         messages: [
-          { role: 'system', content: 'You are Cipher, a concise data-harness assistant.' },
+          { role: 'system', content: 'You are Cipher, a concise data-harness assistant with advanced reasoning capabilities. When analyzing data workflows or plans, reason step-by-step.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
@@ -117,8 +118,28 @@ async function sendLmStudioPrompt(sessionId, prompt) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error?.message || `LM Studio returned HTTP ${response.status}.`);
-    const text = payload.choices?.[0]?.message?.content || 'LM Studio returned an empty response.';
-    jcodeService.broadcast(sessionId, { ev: 'text_delta', text });
+
+    const choice = payload.choices?.[0]?.message || {};
+    let reasoning = choice.reasoning_content || choice.reasoning || '';
+    let content = choice.content || 'LM Studio returned an empty response.';
+
+    // Extract in-band <think> ... </think> tags if present
+    if (!reasoning && content.includes('<think>')) {
+      const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/i);
+      if (thinkMatch) {
+        reasoning = thinkMatch[1].trim();
+        content = content.replace(/<think>[\s\S]*?<\/think>/i, '').trim();
+      }
+    }
+
+    // Broadcast reasoning events if reasoning is present
+    if (reasoning) {
+      jcodeService.broadcast(sessionId, { ev: 'reasoning_delta', text: reasoning });
+      const durationSecs = Number(((Date.now() - startTime) / 1000).toFixed(1));
+      jcodeService.broadcast(sessionId, { ev: 'reasoning_done', duration_secs: durationSecs });
+    }
+
+    jcodeService.broadcast(sessionId, { ev: 'text_delta', text: content });
     jcodeService.broadcast(sessionId, { ev: 'turn_done' });
     return { ok: true, session_id: sessionId, provider: 'lm-studio', model: activeProvider.model };
   } catch (error) {
@@ -188,6 +209,18 @@ function runPythonScript(scriptName, args = [], inputData = null) {
   });
 }
 
+function composeAgentTaskPrompt(prompt) {
+  const namedInPrompt = [...String(prompt).matchAll(/data\/([^,\]\n]+)/g)].map((match) => `data/${path.basename(match[1].trim())}`);
+  const sources = [...new Set(namedInPrompt)];
+  const agentTabTask = /agents? tab|workflow|clean|chart|plot|map|visuali[sz]|data science|wrangl|eval/i.test(prompt);
+  if (!sources.length && !agentTabTask) return prompt;
+
+  const sourceContext = sources.length
+    ? `Available local data sources: ${sources.join(', ')}.`
+    : 'No tabular data file is attached. Inspect the workspace and clearly say which input is needed; do not invent sample data.';
+  return `${prompt}\n\n[Workspace execution policy]\n${sourceContext}\nYou have direct filesystem and shell access to this workspace. Execute the request now; do not reply that you cannot access or process the files. When the request refers to the Agents tab or data science workflows, inspect agents/data_agents.py which equips 14 authentic AI Data Science Team agents (Data Cleaning, Feature Engineering, Wrangling, SQL Analyst, Pandas Analyst, Visualization, EDA, Workflow Planner, Model Evaluation, H2O ML, MLflow) plus domain rescue agents. Select the appropriate agent logic for the user's data. For a cleaning-and-visualization request, inspect and clean the source first, preserve the original, then create the requested line and pie charts from cleaned data.\n\n[Model Reasoning & Response Policy]\nThink through the problem systematically. If you have reasoning capabilities, articulate your model thinking and step-by-step logic clearly. End with a concise **Execution rationale** containing: (1) interpretation of the request, (2) selected workflow and agent why it fit, (3) sources inspected, (4) transformations and validation actually completed, and (5) output paths.`;
+}
+
 function getWorkspaceDiff() {
   return new Promise((resolve) => {
     const git = spawn('git', ['diff', '--no-ext-diff', '--unified=2', '--', '.'], { cwd: PROJECT_ROOT, windowsHide: true });
@@ -232,12 +265,12 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  if (method === 'OPTIONS') {
+    if (method === 'OPTIONS') {
     res.writeHead(204);
     return res.end();
-  }
+    }
 
-  try {
+    try {
     // API: System & JCode Runtime Status
     if (method === 'GET' && pathname === '/api/status') {
       const status = await jcodeService.getStatus();
@@ -328,42 +361,11 @@ const server = http.createServer(async (req, res) => {
 
       // Primary: JCode Harness orchestrates prompt and sub-agents
       try {
-        await jcodeService.sendPrompt(sessionId, prompt);
+        await jcodeService.sendPrompt(sessionId, composeAgentTaskPrompt(prompt));
         return sendJson(res, 200, { ok: true, session_id: sessionId });
       } catch (jcodeErr) {
         console.warn('[server] JCode harness offline or error, running fallback:', jcodeErr.message);
-        // Fallback: direct script execution if JCode bridge is disconnected
-        const isAnalyticsQuery = /trend|failed login|chart|graph|plot|severity|insider|firewall|protocol|risk|compromised|rubric/i.test(prompt);
-        if (isAnalyticsQuery) {
-          jcodeService.broadcast(sessionId, { ev: 'tool_start', call_id: 'chart_agent', name: 'text_to_chart_agent' });
-          const chartResult = await runPythonScript('chartAgent.py', [prompt]);
-          jcodeService.broadcast(sessionId, { ev: 'tool_done', call_id: 'chart_agent', output: 'Generated Chart' });
-          jcodeService.broadcast(sessionId, { ev: 'text_delta', text: chartResult.text_summary || '' });
-          jcodeService.broadcast(sessionId, { ev: 'chart_ready', chart: chartResult.primary_chart, summary: chartResult.text_summary, query: prompt, chart_type: chartResult.chart_type });
-          jcodeService.broadcast(sessionId, { ev: 'turn_done' });
-          return sendJson(res, 200, { ok: true, session_id: sessionId, chart: chartResult });
-        }
-        const agentMatch = prompt.match(/using\s+([\w\s&]+):/i);
-        if (agentMatch) {
-          const queryName = agentMatch[1].trim().toLowerCase();
-          const AGENT_MAP = {
-            'data loader': 'data_loader_agent', 'cleaning': 'cleaning_agent', 'feature': 'feature_agent',
-            'wrangling': 'wrangling_agent', 'sql database': 'sql_agent', 'sql data analyst': 'sql_analyst',
-            'pandas': 'pandas_analyst', 'visualization': 'viz_agent', 'eda': 'eda_agent',
-            'model evaluation': 'model_eval_agent', 'workflow planner': 'planner_agent',
-            'supervisor': 'supervisor_ds_team', 'network': 'network_agent', 'identity': 'identity_agent',
-            'threat': 'threat_agent', 'imputation': 'imputation_agent',
-          };
-          const matchedKey = Object.keys(AGENT_MAP).find(k => queryName.includes(k));
-          const agentId = matchedKey ? AGENT_MAP[matchedKey] : 'supervisor_ds_team';
-          jcodeService.broadcast(sessionId, { ev: 'tool_start', call_id: agentId, name: agentId });
-          const agentResult = await runPythonScript('data_agents.py', ['--agent', agentId]);
-          jcodeService.broadcast(sessionId, { ev: 'tool_done', call_id: agentId, output: 'Execution completed' });
-          jcodeService.broadcast(sessionId, { ev: 'agent_ready', result: agentResult, agentId, name: matchedKey ? matchedKey.toUpperCase() : agentId });
-          jcodeService.broadcast(sessionId, { ev: 'turn_done' });
-          return sendJson(res, 200, { ok: true, session_id: sessionId, result: agentResult });
-        }
-        return sendJson(res, 500, { error: jcodeErr.message });
+        return sendJson(res, 503, { error: `The agent runtime is unavailable, so no analysis was run: ${jcodeErr.message}` });
       }
     }
 
@@ -461,30 +463,9 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, cleared: sessions.length });
     }
 
-    // API: Live SOC Dashboard Metrics & Filters (Gate 3)
-    if (pathname === '/api/analytics/dashboard') {
-      const selection = method === 'POST' ? await parseJsonBody(req) : { dataset: parsedUrl.searchParams.get('dataset') };
-      const dashboardData = await runPythonScript('dataset_dashboard.py', [], selection);
-      return sendJson(res, 200, dashboardData);
-    }
-
-    // API: Text-to-Chart Agent Query (Gate 4)
-    if (method === 'POST' && pathname === '/api/agent/chart') {
-      const body = await parseJsonBody(req);
-      const query = body.query || body.prompt || DEFAULT_ANALYTICS_QUERY;
-      const chartResult = await runPythonScript('chartAgent.py', [query]);
-      return sendJson(res, 200, chartResult);
-    }
-
-    // API: Execute Pipeline (Reproducibility)
-    if (method === 'POST' && pathname === '/api/pipeline/run') {
-      const result = await runPythonScript('pipeline.py');
-      return sendJson(res, 200, { ok: true, result });
-    }
-
-    // API: Import / Upload Dataset (Gate 1 & 2 Ingestion & Auto-Analysis)
+    // API: Attach data for the active agent task. Uploading never triggers a
+    // canned pipeline, dashboard, chart, or schema-specific transformation.
     if (method === 'POST' && pathname === '/api/upload') {
-      const DATA_DIR = process.env.DATASET_DIR || path.join(PROJECT_ROOT, 'data');
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
       }
@@ -507,47 +488,20 @@ const server = http.createServer(async (req, res) => {
 
       const savedFiles = [];
       for (const file of files) {
-        const originalName = file.name || 'uploaded_data.csv';
+        const originalName = path.basename(file.name || 'uploaded_data.csv');
         const buffer = Buffer.from(await file.arrayBuffer());
         await fs.promises.writeFile(path.join(DATA_DIR, originalName), buffer);
         savedFiles.push(originalName);
-
-        // Map to canonical Track 2 dataset files if applicable
-        const lower = originalName.toLowerCase();
-        const headerSample = buffer.toString('utf8', 0, Math.min(buffer.length, 2048)).toLowerCase();
-
-        if (lower.includes('identity') || lower.includes('asset') || headerSample.includes('manager_username') || headerSample.includes('hire_date')) {
-          await fs.promises.writeFile(path.join(DATA_DIR, 'track2_identity_asset_master.csv'), buffer);
-        } else if (lower.includes('firewall') || lower.includes('fw') || headerSample.includes('bytes_sent') || headerSample.includes('src_ip')) {
-          await fs.promises.writeFile(path.join(DATA_DIR, 'track2_firewall_logs.csv'), buffer);
-        } else if (lower.includes('iam') || lower.includes('login') || headerSample.includes('event_type') || headerSample.includes('failed_logins')) {
-          await fs.promises.writeFile(path.join(DATA_DIR, 'track2_iam_audit_trail.json'), buffer);
-        } else if (lower.includes('endpoint') || lower.includes('alert') || lower.includes('edr') || headerSample.includes('detected_timestamp') || headerSample.includes('alert_id')) {
-          await fs.promises.writeFile(path.join(DATA_DIR, 'track2_endpoint_alerts.xlsx'), buffer);
-        }
       }
 
-      // The dashboard deliberately reads only this explicit upload registry,
-      // never the bundled example datasets.
+      // Keep a provenance record for the task, not an input to automated analysis.
       const registryPath = path.join(DATA_DIR, '.user-datasets.json');
       const previous = fs.existsSync(registryPath) ? JSON.parse(fs.readFileSync(registryPath, 'utf8')) : [];
       fs.writeFileSync(registryPath, JSON.stringify([...new Set([...previous, ...savedFiles])], null, 2));
 
-      const output = await runPythonScript('pipeline.py');
-      let result = typeof output === 'object' ? output : {};
-      if (typeof output === 'string') {
-        const jsonMatch = output.match(/__PIPELINE_RESULT_JSON__:(.*)/);
-        if (jsonMatch) {
-          try { result = JSON.parse(jsonMatch[1]); } catch (_) {}
-        }
-      }
-
       return sendJson(res, 200, {
         ok: true,
         saved_files: savedFiles,
-        clean_total: result.clean_total,
-        raw_total: result.raw_total,
-        receipt_hash: result.receipt_hash,
       });
     }
 
@@ -555,24 +509,6 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && pathname === '/api/agents') {
       const agents = await runPythonScript('data_agents.py');
       return sendJson(res, 200, { agents });
-    }
-
-    // API: Run Specific Extracted Data Agent
-    if (method === 'POST' && pathname === '/api/agent/run') {
-      const body = await parseJsonBody(req);
-      const agentId = body.agentId || body.id;
-      const input = body.input || {};
-      const activeSession = jcodeService.attachedSessionId;
-      if (activeSession) {
-        jcodeService.broadcast(activeSession, { ev: 'tool_start', call_id: agentId, name: agentId });
-      }
-      const result = await runPythonScript('data_agents.py', ['--agent', agentId, '--input', JSON.stringify(input)]);
-      if (activeSession) {
-        jcodeService.broadcast(activeSession, { ev: 'tool_done', call_id: agentId, output: 'Agent completed' });
-        jcodeService.broadcast(activeSession, { ev: 'agent_ready', result, agentId });
-        jcodeService.broadcast(activeSession, { ev: 'turn_done' });
-      }
-      return sendJson(res, 200, { ok: true, result });
     }
 
     // Fallback static files

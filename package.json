@@ -9,8 +9,7 @@
     "electron": "electron .",
     "web": "node src/server.js",
     "dev": "electron .",
-    "pipeline": "python agents/pipeline.py",
-    "test:electron": "electron test-electron.js"
+    "pipeline": "python agents/pipeline.py"
   },
   "keywords": [
     "jcode",
