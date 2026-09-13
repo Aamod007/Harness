@@ -1,0 +1,111 @@
+# Track 2 Cybersecurity Data Dictionary
+
+> Auto-generated compliance data dictionary specifying column names, inferred data types, descriptions, nullability, and sample values for all canonical dataset tables.
+
+## Table of Contents
+- [1. Identity & Asset Master (`users`)](#1-identity--asset-master-users)
+- [2. Perimeter Firewall Telemetry (`firewall_logs`)](#2-perimeter-firewall-telemetry-firewall_logs)
+- [3. IAM Authentication Audit Trail (`logins`)](#3-iam-authentication-audit-trail-logins)
+- [4. EDR Endpoint Alerts (`endpoint_alerts`)](#4-edr-endpoint-alerts-endpoint_alerts)
+- [5. Unified Analytical Telemetry (`unified_telemetry`)](#5-unified-analytical-telemetry-unified_telemetry)
+
+### 1. Identity & Asset Master (`users`)
+**Source File:** `track2_identity_asset_master.csv` | **Total Rows:** `3,090` | **Total Columns:** `12`
+
+| Column Name | Inferred Type | Nullable | Description | Sample Value |
+|---|---|:---:|---|---|
+| `user_id` | `str` | No | Standardized unique employee identifier in canonical EMP##### format. | `EMP12741` |
+| `username` | `str` | No | Enterprise login username normalized for authentication audit. | `OMKAAR.CHANA52` |
+| `full_name` | `str` | No | Full legal name of employee normalized via Unicode NFC pass. | `Omkaar Chana` |
+| `department` | `str` | No | Canonical enterprise business unit (1 of 10 standard departments). | `Supply Chain & Procurement` |
+| `role` | `str` | No | Organizational role and access privilege designation. | `Administrator` |
+| `location` | `str` | No | Physical work facility (HQ, Branch Office, Remote). | `Branch Office` |
+| `hostname` | `str` | No | Assigned primary workstation hostname (uppercase, stripped domain suffix). | `LPT-12741` |
+| `device_id` | `str` | Yes | Hardware asset tag identifier. | `dev42831` |
+| `status` | `str` | No | Employment status (ACTIVE, SUSPENDED, TERMINATED). | `WORKING` |
+| `hire_date` | `str` | No | Employee start timestamp standardized to ISO-8601 UTC. | `2025-01-11T06:52:43` |
+| `termination_date` | `str` | Yes | Employment conclusion timestamp or null if active. | `2025-04-21T15:06:37` |
+| `manager_username` | `str` | Yes | Corporate line manager username for escalation. | `manager780` |
+
+---
+
+### 2. Perimeter Firewall Telemetry (`firewall_logs`)
+**Source File:** `track2_firewall_logs.csv` | **Total Rows:** `30,600` | **Total Columns:** `19`
+
+| Column Name | Inferred Type | Nullable | Description | Sample Value |
+|---|---|:---:|---|---|
+| `log_id` | `str` | No | Unique perimeter network event sequence identifier. | `FW000002394` |
+| `timestamp` | `str` | No | Event occurrence timestamp standardized to ISO-8601 UTC. | `2026-09-06T11:22:07` |
+| `hostname` | `str` | No | Originating internal workstation or server hostname. | `LPT-11180` |
+| `src_ip` | `str` | No | Source IPv4 address with reconstructed 3-octet gateways. | `10.232.175.1` |
+| `dst_ip` | `str` | No | Target IPv4 address with boundary validation. | `INVALID_IP_999.999.999.999` |
+| `src_port` | `float64` | Yes | Originating TCP/UDP port number. | `25.0` |
+| `dst_port` | `float64` | Yes | Target service destination port number. | `443.0` |
+| `protocol` | `str` | No | Transport protocol normalized to canonical TCP, UDP, or ICMP. | `TCP` |
+| `action` | `str` | No | Firewall policy enforcement action normalized to ALLOW or DENY. | `ALLOW` |
+| `bytes_sent` | `int64` | No | Outbound network payload volume standardized to integer bytes. | `727539` |
+| `bytes_received` | `int64` | No | Inbound payload volume standardized to integer bytes. | `15092296` |
+| `session_id` | `str` | No | Correlated user session ID reconciled via 5-minute temporal join. | `SID_FW_FAAF9704` |
+| `threat_flag` | `int64` | No | Binary threat intelligence indicator (1 = flagged, 0 = benign). | `0` |
+| `rule_name` | `str` | Yes | Perimeter security rule triggered. | `block_tor_exit` |
+| `geo_country` | `str` | Yes | Geographical destination country of destination IP. | `United States` |
+| `date` | `str` | No | Extracted calendar date (YYYY-MM-DD) for partitioning. | `2026-09-06` |
+| `src_ip_valid` | `bool` | No | Boolean validity flag confirming standard 0-255 octets. | `True` |
+| `dst_ip_valid` | `bool` | No | Boolean validity flag confirming valid IP address. | `False` |
+| `bytes_transferred` | `int64` | No | Total bidirectional payload volume in bytes. | `15819835` |
+
+---
+
+### 3. IAM Authentication Audit Trail (`logins`)
+**Source File:** `track2_iam_audit_trail.json` | **Total Rows:** `20,500` | **Total Columns:** `18`
+
+| Column Name | Inferred Type | Nullable | Description | Sample Value |
+|---|---|:---:|---|---|
+| `event_id` | `str` | No | Unique identity management authentication event identifier. | `IAM00008974` |
+| `timestamp` | `str` | No | Login timestamp reconciled from epoch/string to ISO-8601 UTC. | `2026-05-09T12:43:00` |
+| `user_id` | `str` | No | Employee identity key standardized to canonical EMP#####. | `EMP11889` |
+| `username` | `str` | No | Corporate directory username. | `atharv.shukla79` |
+| `department` | `str` | No | Canonical enterprise business unit. | `Legal & Compliance` |
+| `event_type` | `str` | No | Normalized authentication outcome (login_success, login_failed, other). | `login_success` |
+| `auth_method` | `str` | No | Authentication mechanism (password, sso, mfa, biometric). | `otp` |
+| `source_ip` | `str` | No | Client workstation authentication IP address. | `UNKNOWN` |
+| `hostname` | `str` | No | Originating terminal hostname. | `VDR-11889` |
+| `device_id` | `str` | Yes | Reported client hardware identifier. | `DEV48365` |
+| `session_id` | `str` | No | Reconciled authentication session token. | `SID120652` |
+| `mfa_passed` | `int64` | No | MFA challenge resolution flag (1 = passed, 0 = failed/unresolved). | `1` |
+| `failure_reason` | `str` | Yes | Categorical reason code for rejected authentication. | `` |
+| `risk_score` | `float64` | No | Continuous authentication threat score scaled to 0.0 - 100.0. | `78.0` |
+| `geo_location` | `str` | Yes | Reported two-letter state/country geolocation code. | `PB` |
+| `date` | `str` | No | Calendar date (YYYY-MM-DD) for trend analysis. | `2026-05-09` |
+| `event_type_raw` | `str` | No | Original raw event classification before normalization. | `LOGON_SUCCESS` |
+| `failed_logins` | `int64` | No | Binary flag (1 = failed login attempt, 0 = successful/other). | `0` |
+
+---
+
+### 4. EDR Endpoint Alerts (`endpoint_alerts`)
+**Source File:** `track2_endpoint_alerts.xlsx` | **Total Rows:** `8,240` | **Total Columns:** `20`
+
+| Column Name | Inferred Type | Nullable | Description | Sample Value |
+|---|---|:---:|---|---|
+| `alert_id` | `str` | No | Unique endpoint detection and response incident identifier. | `EPA00001920` |
+| `detected_timestamp` | `str` | No | EDR alert tripwire timestamp normalized to ISO-8601 UTC. | `2026-08-09T11:06:47` |
+| `resolved_timestamp` | `str` | Yes | Incident remediation timestamp or null if active. | `2026-08-11T06:06:47` |
+| `hostname` | `str` | No | Compromised host workstation or server name. | `VDR-11768` |
+| `user_id` | `str` | No | Associated logged-in user account standardized to EMP#####. | `EMP11768` |
+| `endpoint_product` | `str` | No | Security telemetry vendor (Kaspersky, CrowdStrike, Defender). | `Kaspersky` |
+| `alert_name` | `str` | No | Descriptive threat signature classification. | `Lateral movement detected` |
+| `severity` | `str` | No | Normalized threat severity tier (CRITICAL, HIGH, MEDIUM, LOW). | `MEDIUM` |
+| `status` | `str` | No | Incident workflow lifecycle status (OPEN, IN_PROGRESS, RESOLVED, FALSE_POSITIVE). | `RESOLVED` |
+| `description` | `str` | No | Unstructured alert details and command telemetry. | `Endpoint protection detected suspicio...` |
+| `file_path` | `str` | Yes | Observed filesystem executable or DLL path. | `C:\ProgramData\svc\agent.dll` |
+| `process_name` | `str` | Yes | Target process name or null. | `msedge.exe` |
+| `sha256` | `str` | Yes | Cryptographic file hash for IoC cross-referencing. | `054e0398bbd02a8260a7d6d34e2f84e7ee677...` |
+| `assigned_to` | `str` | Yes | SOC investigator username or null. | `soc.analyst2` |
+| `device_criticality` | `str` | Yes | Asset tier criticality classification. | `CRITICAL` |
+| `date` | `str` | No | Alert detection date (YYYY-MM-DD). | `2026-08-09` |
+| `parsed_severity` | `str` | No | Severity extracted from unstructured heuristic text parser. | `MEDIUM` |
+| `parsed_signature` | `str` | No | Malware/TTP signature extracted from text parser. | `SIG_LATERAL_MOVEMENT` |
+| `parsed_host` | `str` | No | Host entity extracted from text parser. | `VDR-11768` |
+| `impossible_resolution` | `int64` | No | Flag (1 = resolved before detected temporal corruption, 0 = valid). | `0` |
+
+---

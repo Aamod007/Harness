@@ -1,0 +1,20 @@
+{
+  "name": "cipher-ui",
+  "version": "1.0.0",
+  "description": "Frontend client for JCode harness",
+  "main": "index.html",
+  "type": "module",
+  "scripts": {
+    "start": "node ../server.js",
+    "dev": "node ../server.js"
+  },
+  "keywords": [
+    "jcode",
+    "agent",
+    "coding-agent",
+    "harness",
+    "frontend"
+  ],
+  "author": "Aamod Kumar",
+  "license": "ISC"
+}

@@ -1,0 +1,25 @@
+{
+  "name": "jcode-harness-frontend",
+  "version": "1.0.0",
+  "description": "Integrated frontend client and server for JCode agent harness",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "electron": "electron .",
+    "web": "node src/server.js",
+    "dev": "electron .",
+    "pipeline": "python agents/pipeline.py"
+  },
+  "keywords": [
+    "jcode",
+    "agent",
+    "harness",
+    "frontend"
+  ],
+  "author": "Aamod Kumar",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^44.3.0"
+  }
+}

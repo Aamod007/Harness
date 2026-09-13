@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ffc539">
+    <title>Cipher</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="nami-shell">
+        <aside class="sidecar" aria-label="Cipher workspace navigation">
+            <div class="sidecar-top">
+                <a class="wordmark" href="#sessions" aria-label="Cipher home">
+                    <span>CIPHER</span>
+                </a>
+                <p class="project-path" id="project-path">~/workspace</p>
+            </div>
+
+            <nav class="sidebar-tabs" aria-label="Sidebar sections">
+                <button class="sidebar-tab active" type="button" data-sidebar-tab="sessions" aria-selected="true">SESSIONS</button>
+                <button class="sidebar-tab" type="button" data-sidebar-tab="dashboard" aria-selected="false">DASHBOARD</button>
+                <button class="sidebar-tab" type="button" data-sidebar-tab="workspace" aria-selected="false">WORKSPACE</button>
+                <button class="sidebar-tab" type="button" data-sidebar-tab="agents" aria-selected="false">AGENTS</button>
+            </nav>
+
+            <div class="sidebar-content">
+                <section class="sidebar-view active" id="sidebar-sessions-view" aria-label="Recent agent sessions">
+                    <div class="side-label-row"><span>SESSIONS</span><span class="session-total" id="session-count">0</span></div>
+                    <div id="session-list" class="session-list" aria-live="polite"></div>
+                </section>
+
+                <section class="sidebar-view" id="sidebar-dashboard-view" aria-label="SOC filters" hidden>
+                    <div class="side-label-row"><span>SOC FILTERS</span><button class="plain-button" type="button" id="reset-filters-btn">RESET</button></div>
+                    <p class="workspace-hint">Filter zero-trust telemetry across identity, perimeter, and endpoint layers.</p>
+                    <div class="sidebar-filter-group">
+                        <label for="dash-filter-department" class="filter-label">DEPARTMENT</label>
+                        <select id="dash-filter-department" class="filter-select">
+                            <option value="All">All Departments</option>
+                        </select>
+                    </div>
+                    <div class="sidebar-filter-group">
+                        <label for="dash-filter-host" class="filter-label">HOSTNAME</label>
+                        <input id="dash-filter-host" type="text" class="filter-input" placeholder="e.g. LPT, VDR, WS...">
+                    </div>
+                    <div class="sidebar-filter-group">
+                        <label for="dash-filter-severity" class="filter-label">EDR SEVERITY</label>
+                        <select id="dash-filter-severity" class="filter-select">
+                            <option value="All">All Severities</option>
+                            <option value="CRITICAL">Critical</option>
+                            <option value="HIGH">High</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="LOW">Low</option>
+                        </select>
+                    </div>
+                    <div class="sidebar-filter-group">
+                        <label for="dash-filter-start-date" class="filter-label">START DATE</label>
+                        <input id="dash-filter-start-date" type="date" class="filter-input">
+                    </div>
+                    <div class="sidebar-filter-group">
+                        <label for="dash-filter-end-date" class="filter-label">END DATE</label>
+                        <input id="dash-filter-end-date" type="date" class="filter-input">
+                    </div>
+                    <button type="button" class="side-action side-action-primary" id="apply-filters-btn" style="margin-top: 15px; width: 100%;">APPLY FILTERS</button>
+                </section>
+
+                <section class="sidebar-view" id="sidebar-workspace-view" aria-label="Workspace files" hidden>
+                    <div class="side-label-row"><span>WORKSPACE</span><span class="workspace-status" id="tree-status-sidebar"></span></div>
+                    <p class="workspace-hint">Open files in the editor. Expand folders to browse your workspace.</p>
+                    <div id="workspace-tree-sidebar" class="workspace-tree-sidebar" role="tree" aria-label="Cipher workspace files"></div>
+                </section>
+
+                <section class="sidebar-view" id="sidebar-agents-view" aria-label="Available agents" hidden>
+                    <div class="side-label-row"><span>AGENTS</span></div>
+                    <div id="library-list-sidebar" class="library-list-sidebar" aria-live="polite"></div>
+                </section>
+            </div>
+
+            <div class="sidecar-bottom">
+                <label class="side-action" for="file-upload-input" style="display: flex; align-items: center; justify-content: center; cursor: pointer;" title="Import dataset files (.csv, .xlsx, .json, .parquet) for instant analysis">
+                    <span aria-hidden="true">↑</span> IMPORT
+                    <input id="file-upload-input" type="file" multiple accept=".csv,.tsv,.xlsx,.xls,.json,.parquet" hidden>
+                </label>
+                <button class="side-action side-action-primary" type="button" id="new-session-button"><span aria-hidden="true">+</span> NEW SESSION</button>
+            </div>
+
+            <div class="sidebar-resizer" aria-label="Resize sidebar"></div>
+            <button class="sidebar-toggle" type="button" id="sidebar-toggle" aria-label="Toggle sidebar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </button>
+        </aside>
+
+        <main class="workbench">
+            <div class="floating-top-actions">
+                <button class="glass-action-button" type="button" id="settings-button" aria-label="Open settings" aria-expanded="false" title="Settings">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
+                <button class="glass-action-button profile-glass-button" type="button" id="profile-button" aria-label="Open profile menu" aria-expanded="false" title="Profile"><span id="profile-avatar">WS</span></button>
+
+                <div class="menu-popover" id="settings-menu" hidden>
+                    <p>APPEARANCE</p>
+                    <div class="theme-picker" role="group" aria-label="Color theme">
+                        <button type="button" class="theme-option" data-theme-option="light" aria-pressed="false">Light</button>
+                        <button type="button" class="theme-option" data-theme-option="dark" aria-pressed="false">Dark</button>
+                        <button type="button" class="theme-option" data-theme-option="system" aria-pressed="true">System</button>
+                    </div>
+                    <p class="settings-section-label">JCODE RUNTIME</p>
+                    <div class="settings-field">
+                        <label for="model-select">Active Model</label>
+                        <select id="model-select" class="settings-select">
+                            <option value="">Detecting models...</option>
+                        </select>
+                    </div>
+                    <div class="settings-field">
+                        <label for="provider-input">Provider</label>
+                        <input id="provider-input" type="text" class="settings-input" value="openai-compatible" placeholder="openai-compatible, gemini, claude...">
+                    </div>
+                    <div class="settings-field">
+                        <label for="api-key-input">API Key</label>
+                        <input id="api-key-input" type="password" class="settings-input" placeholder="Enter API key...">
+                        <button type="button" id="save-api-key-button" class="settings-action-btn">Save Key</button>
+                    </div>
+                    <p class="settings-section-label">WORKSPACE</p>
+                    <button type="button" id="run-pipeline-button">Run cleaning pipeline</button>
+                    <button type="button" id="reset-button">Clear sessions</button>
+                </div>
+
+                <div class="menu-popover profile-popover" id="profile-menu" hidden>
+                    <p>LOCAL PROFILE</p><strong id="profile-user">Workspace Owner</strong><span id="profile-harness">JCode local harness</span>
+                </div>
+            </div>
+
+            <div class="loading-rule hidden" id="loading-line"><span></span></div>
+
+            <section class="app-view active" id="sessions-view" aria-labelledby="sessions-heading">
+                <div class="session-canvas">
+                    <div class="session-copy">
+                        <h1 id="sessions-heading">What would you like to know?</h1>
+                        <p class="agent-response" id="session-context" hidden></p>
+                    </div>
+
+                    <div class="stream-card hidden" id="stream-card">
+                        <div class="stream-header">
+                            <span class="stream-badge" id="stream-badge">GENERATING</span>
+                            <span class="stream-model" id="stream-model"></span>
+                        </div>
+                        <div class="reasoning-block hidden" id="reasoning-block">
+                            <div class="reasoning-title">Thinking process</div>
+                            <div class="reasoning-text" id="reasoning-text"></div>
+                        </div>
+                        <div class="stream-text" id="stream-text"></div>
+                    </div>
+
+                    <div class="tool-activity hidden" id="tool-activity">
+                        <div class="tool-activity-header">
+                            <span>HARNESS TOOLS</span>
+                            <span class="tool-activity-count" id="tool-count">0</span>
+                        </div>
+                        <div class="tool-activity-list" id="tool-activity-list"></div>
+                    </div>
+
+                    <section class="analysis-drawer hidden" id="analysis-grid" aria-label="Analysis details">
+                        <div class="drawer-topline"><span>RESULT DETAIL</span><button class="plain-button" type="button" id="toggle-plan" aria-expanded="false">QUERY PLAN</button></div>
+                        <div class="metric-strip" id="metric-strip"></div>
+                        <div class="plot-wrap" id="plot-wrap"><div id="main-plot" class="plot"></div><p class="plot-caption" id="plot-caption"></p></div>
+                        <div class="result-copy"><p id="answer-summary"></p><span id="answer-model"></span></div>
+                        <pre id="plan-output" hidden></pre>
+                        <div class="takeaways" id="takeaways-card"></div>
+                    </section>
+
+                    <form class="prompt-bar" id="prompt-form">
+                        <label class="sr-only" for="prompt-input">Ask JCode about this workspace</label>
+                        <input id="prompt-input" type="text" autocomplete="off" placeholder="Ask JCode about this workspace">
+                        <button class="prompt-cancel hidden" type="button" id="cancel-button" aria-label="Cancel active run" title="Cancel run">
+                            <span class="cancel-dot"></span> STOP
+                        </button>
+                        <button class="prompt-send" type="submit" id="prompt-send-button" aria-label="Run analysis">
+                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 2L11 13"></path>
+                                <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <section class="workspace-editor" id="workspace-editor" aria-label="Workspace editor" hidden>
+                <div class="editor-tabstrip" id="editor-tabstrip" role="tablist" aria-label="Open workspace files"></div>
+                <div class="editor-panel" id="editor-panel" role="tabpanel" aria-live="polite">
+                    <div class="editor-empty-state">
+                        <h2>No file open</h2>
+                        <p>Select a file from the Workspace sidebar to open it here.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- GATE 3: Zero-Trust SOC Command Dashboard -->
+            <section class="app-view dashboard-view" id="dashboard-view" aria-label="Zero-Trust SOC Command Dashboard" hidden>
+                <div class="dashboard-container">
+                    <header class="dashboard-header">
+                        <div>
+                            <h1 class="dashboard-title">Zero-Trust Telemetry & SOC Intelligence</h1>
+                            <p class="dashboard-subtitle">Track 2 Command Center &bull; Live Telemetry Ingestion &bull; Certified Risk Formulations</p>
+                        </div>
+                        <div class="dashboard-header-actions">
+                            <span class="soc-live-indicator"><span class="pulse-dot"></span> LIVE TELEMETRY</span>
+                            <button class="plain-button" type="button" id="refresh-dashboard-btn">REFRESH</button>
+                        </div>
+                    </header>
+
+                    <!-- Top KPI Cards with Surfaced Formulas -->
+                    <div class="kpi-grid">
+                        <article class="kpi-card" id="kpi-card-failed-logins">
+                            <div class="kpi-top">
+                                <span class="kpi-label">FAILED-LOGIN RATE</span>
+                                <span class="kpi-badge badge-danger" id="kpi-badge-fails">AUTH RISK</span>
+                            </div>
+                            <div class="kpi-value" id="kpi-failed-login-rate">--</div>
+                            <div class="kpi-formula-wrap">
+                                <span class="formula-tag">FORMULA</span>
+                                <code class="formula-code" id="formula-failed-logins">(failed_logins / total_attempts) &times; 100%</code>
+                            </div>
+                            <p class="kpi-desc" id="kpi-desc-fails">Calculating...</p>
+                        </article>
+
+                        <article class="kpi-card" id="kpi-card-account-risk">
+                            <div class="kpi-top">
+                                <span class="kpi-label">COMPROMISED ACCOUNT RISK</span>
+                                <span class="kpi-badge badge-warning" id="kpi-badge-risk">ELEVATED</span>
+                            </div>
+                            <div class="kpi-value" id="kpi-compromised-risk">--</div>
+                            <div class="kpi-formula-wrap">
+                                <span class="formula-tag">FORMULA</span>
+                                <code class="formula-code" id="formula-account-risk">min(100, base + fails&times;15 + alerts&times;10 + threats&times;20)</code>
+                            </div>
+                            <p class="kpi-desc" id="kpi-desc-risk">Calculating...</p>
+                        </article>
+
+                        <article class="kpi-card" id="kpi-card-insider-threat">
+                            <div class="kpi-top">
+                                <span class="kpi-label">INSIDER-THREAT SCORE</span>
+                                <span class="kpi-badge badge-info" id="kpi-badge-insider">UEBA INDEX</span>
+                            </div>
+                            <div class="kpi-value" id="kpi-insider-score">--</div>
+                            <div class="kpi-formula-wrap">
+                                <span class="formula-tag">FORMULA</span>
+                                <code class="formula-code" id="formula-insider-threat">0.40&times;fails + 0.35&times;edr + 0.25&times;fw</code>
+                            </div>
+                            <p class="kpi-desc" id="kpi-desc-insider">Calculating...</p>
+                        </article>
+
+                        <article class="kpi-card" id="kpi-card-critical-edr">
+                            <div class="kpi-top">
+                                <span class="kpi-label">CRITICAL EDR ALERTS</span>
+                                <span class="kpi-badge badge-danger">SEV-1 TIER</span>
+                            </div>
+                            <div class="kpi-value" id="kpi-critical-alerts">--</div>
+                            <div class="kpi-formula-wrap">
+                                <span class="formula-tag">FORMULA</span>
+                                <code class="formula-code" id="formula-critical-edr">COUNT(*) WHERE severity = 'CRITICAL'</code>
+                            </div>
+                            <p class="kpi-desc" id="kpi-desc-edr">Calculating...</p>
+                        </article>
+
+                        <article class="kpi-card" id="kpi-card-firewall-denies">
+                            <div class="kpi-top">
+                                <span class="kpi-label">PERIMETER POLICY DENIES</span>
+                                <span class="kpi-badge badge-neutral">PERIMETER</span>
+                            </div>
+                            <div class="kpi-value" id="kpi-firewall-denies">--</div>
+                            <div class="kpi-formula-wrap">
+                                <span class="formula-tag">FORMULA</span>
+                                <code class="formula-code" id="formula-firewall-denies">COUNT(*) WHERE action = 'DENY'</code>
+                            </div>
+                            <p class="kpi-desc" id="kpi-desc-fw">Calculating...</p>
+                        </article>
+                    </div>
+
+                    <!-- Middle Trend Lines & Live Interactive Charts -->
+                    <div class="dashboard-charts-grid">
+                        <div class="dashboard-chart-card chart-span-2">
+                            <div class="chart-header">
+                                <h3>Failed Login Trend by Department</h3>
+                                <span class="chart-tag">PLOTLY LIVE</span>
+                            </div>
+                            <div id="chart-login-trend" class="dash-plot-box"></div>
+                        </div>
+
+                        <div class="dashboard-chart-card">
+                            <div class="chart-header">
+                                <h3>EDR Alert Severity Triage</h3>
+                                <span class="chart-tag">SEVERITY RATIO</span>
+                            </div>
+                            <div id="chart-edr-severity" class="dash-plot-box"></div>
+                        </div>
+
+                        <div class="dashboard-chart-card chart-span-3">
+                            <div class="chart-header">
+                                <h3>Firewall Policy Enforcement by Protocol</h3>
+                                <span class="chart-tag">NETWORK INGRESS/EGRESS</span>
+                            </div>
+                            <div id="chart-firewall-proto" class="dash-plot-box"></div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Live Detail Table -->
+                    <div class="dashboard-table-card">
+                        <div class="table-card-header">
+                            <div class="table-title-row">
+                                <h3>Live Threat Telemetry Audit Records</h3>
+                                <span class="record-counter" id="record-count-badge">0 records</span>
+                            </div>
+                            <input id="table-search-input" type="text" class="table-search" placeholder="Search filtered records (user, host, dept)...">
+                        </div>
+                        <div class="table-responsive">
+                            <table class="detail-table" id="telemetry-table">
+                                <thead>
+                                    <tr>
+                                        <th>TIMESTAMP</th>
+                                        <th>USER ID</th>
+                                        <th>HOSTNAME</th>
+                                        <th>DEPARTMENT</th>
+                                        <th>EVENT TYPE</th>
+                                        <th>RISK SCORE</th>
+                                        <th>STATUS</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="telemetry-table-body">
+                                    <tr><td colspan="7" class="table-loading">Loading telemetry records...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

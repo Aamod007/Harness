@@ -1,0 +1,41 @@
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+
+# Dependencies
+node_modules/
+
+# Vendored third-party runtimes (contains embedded credentials)
+vendor/jcode/
+
+# Build targets and binaries
+target/
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Environment and secrets
+.env
+.env.local
+*.env
+*.key
+*.pem
+
+# Temporary and local state
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# DuckDB WAL and lock
+*.duckdb.wal
+*.duckdb.tmp
+
+# Large binary media
+*.mp4
+*.gif
+
