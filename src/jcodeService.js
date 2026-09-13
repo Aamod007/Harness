@@ -257,7 +257,32 @@ class JcodeService {
     try {
       const client = await this.ensureAttached(sessionId);
       const result = await client.listModels(sessionId);
-      return result;
+      // The runtime's global catalog can include models from providers that are
+      // not selectable by this session. Offering those entries produces opaque
+      // 404s, so keep the selector pinned until provider-scoped routes exist.
+      if (!this.availableRoutes.length) {
+        const current = result.current || this.currentModel || DEFAULT_MODEL;
+        return {
+          models: [current],
+          current,
+          can_switch: false,
+          message: 'Model switching is unavailable until the active provider has a verified route.',
+        };
+      }
+      const provider = String(this.currentProvider || '').toLowerCase();
+      const routedModels = this.availableRoutes
+        .filter((route) => route.available !== false && String(route.provider || '').toLowerCase() === provider)
+        .map((route) => route.model)
+        .filter(Boolean);
+      const current = result.current || this.currentModel || DEFAULT_MODEL;
+      const models = [...new Set([...routedModels, current])];
+      return {
+        ...result,
+        models,
+        current,
+        can_switch: models.length > 1,
+        message: models.length > 1 ? undefined : 'No alternate model route is available for the active provider.',
+      };
     } catch (err) {
       console.warn(`[jcodeService] listModels error:`, err.message);
       return { models: [], current: this.currentModel };
@@ -274,6 +299,14 @@ class JcodeService {
   async setApiKey(provider, apiKey) {
     if (!this.client) await this.connectClient();
     await this.client.setApiKey(provider, apiKey);
+    if (this.attachedSessionId) {
+      const info = await this.client.getRuntimeInfo(this.attachedSessionId).catch(() => null);
+      if (info) {
+        this.currentModel = info.model || this.currentModel;
+        this.currentProvider = info.provider || this.currentProvider;
+        this.availableRoutes = info.routes || this.availableRoutes;
+      }
+    }
     return { ok: true, provider };
   }
 

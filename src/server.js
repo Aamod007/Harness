@@ -27,6 +27,7 @@ const MAX_PAYLOAD_BYTES = parseInt(process.env.MAX_PAYLOAD_BYTES || '', 10) || 5
 const DEFAULT_ANALYTICS_QUERY = process.env.DEFAULT_ANALYTICS_QUERY || 'Show the trend of failed login attempts by department over the last 7 days.';
 const UI_DIR = path.join(PROJECT_ROOT, 'client');
 const LM_STUDIO_BASE_URL = (process.env.LM_STUDIO_BASE_URL || 'http://127.0.0.1:1234/v1').replace(/\/$/, '');
+const activeProvider = { id: 'jcode', model: null };
 
 process.on('uncaughtException', (err) => {
   console.error('[server uncaughtException]:', err);
@@ -70,6 +71,61 @@ async function getLmStudioStatus() {
       ? 'Timed out. In LM Studio, start the Local Server and load a model.'
       : 'Unavailable. In LM Studio, start the Local Server and load a model.';
     return { configured: true, online: false, endpoint: LM_STUDIO_BASE_URL, message };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function verifyGroqKey(apiKey) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    if (response.ok) return { ok: true };
+    if (response.status === 401) return { ok: false, error: 'Groq rejected this API key. Create or paste a valid key from GroqCloud, then try again.' };
+    return { ok: false, error: `Groq key validation failed (HTTP ${response.status}). Please try again.` };
+  } catch (error) {
+    return { ok: false, error: error.name === 'AbortError' ? 'Groq key validation timed out. Check your connection and try again.' : 'Could not reach Groq to validate the key.' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function lmStudioChatModels(models = []) {
+  return models.filter((model) => !/embed|embedding/i.test(model));
+}
+
+async function sendLmStudioPrompt(sessionId, prompt) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  try {
+    const response = await fetch(`${LM_STUDIO_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: activeProvider.model,
+        messages: [
+          { role: 'system', content: 'You are Cipher, a concise data-harness assistant.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error?.message || `LM Studio returned HTTP ${response.status}.`);
+    const text = payload.choices?.[0]?.message?.content || 'LM Studio returned an empty response.';
+    jcodeService.broadcast(sessionId, { ev: 'text_delta', text });
+    jcodeService.broadcast(sessionId, { ev: 'turn_done' });
+    return { ok: true, session_id: sessionId, provider: 'lm-studio', model: activeProvider.model };
+  } catch (error) {
+    const message = error.name === 'AbortError' ? 'LM Studio timed out.' : error.message;
+    jcodeService.broadcast(sessionId, { ev: 'error', message });
+    jcodeService.broadcast(sessionId, { ev: 'turn_done' });
+    throw new Error(message);
   } finally {
     clearTimeout(timeout);
   }
@@ -185,11 +241,33 @@ const server = http.createServer(async (req, res) => {
     // API: System & JCode Runtime Status
     if (method === 'GET' && pathname === '/api/status') {
       const status = await jcodeService.getStatus();
-      return sendJson(res, 200, { ...status, lm_studio: await getLmStudioStatus() });
+      return sendJson(res, 200, {
+        ...status,
+        provider: activeProvider.id === 'lm-studio' ? 'lm-studio' : status.provider,
+        model: activeProvider.id === 'lm-studio' ? activeProvider.model : status.model,
+        active_provider: activeProvider.id,
+        lm_studio: await getLmStudioStatus(),
+      });
     }
 
     if (method === 'GET' && pathname === '/api/providers/lm-studio/status') {
       return sendJson(res, 200, await getLmStudioStatus());
+    }
+
+    if (method === 'POST' && pathname === '/api/config/provider') {
+      const body = await parseJsonBody(req);
+      if (body.provider === 'lm-studio') {
+        const lmStudio = await getLmStudioStatus();
+        const models = lmStudioChatModels(lmStudio.models);
+        if (!lmStudio.online || !models.length) return sendJson(res, 400, { error: 'LM Studio is not ready with a chat model.' });
+        activeProvider.id = 'lm-studio';
+        activeProvider.model = models.includes(activeProvider.model) ? activeProvider.model : models[0];
+        return sendJson(res, 200, { ok: true, provider: activeProvider.id, model: activeProvider.model, models });
+      }
+      activeProvider.id = 'jcode';
+      activeProvider.model = null;
+      const status = await jcodeService.getStatus();
+      return sendJson(res, 200, { ok: true, provider: 'groq', model: status.model });
     }
 
     // API: List Sessions
@@ -243,6 +321,10 @@ const server = http.createServer(async (req, res) => {
       const body = await parseJsonBody(req);
       const prompt = body.prompt || body.question;
       if (!prompt) return sendJson(res, 400, { error: 'Prompt is required.' });
+
+      if (activeProvider.id === 'lm-studio') {
+        return sendJson(res, 200, await sendLmStudioPrompt(sessionId, prompt));
+      }
 
       // Primary: JCode Harness orchestrates prompt and sub-agents
       try {
@@ -323,11 +405,23 @@ const server = http.createServer(async (req, res) => {
     if (modelsMatch) {
       const sessionId = decodeURIComponent(modelsMatch[1]);
       if (method === 'GET') {
+        if (activeProvider.id === 'lm-studio') {
+          const lmStudio = await getLmStudioStatus();
+          const models = lmStudioChatModels(lmStudio.models);
+          return sendJson(res, 200, { models, current: activeProvider.model, can_switch: true, message: models.length > 1 ? undefined : 'LM Studio has one loaded chat model.' });
+        }
         const models = await jcodeService.listModels(sessionId);
         return sendJson(res, 200, models);
       }
       if (method === 'POST') {
         const body = await parseJsonBody(req);
+        if (activeProvider.id === 'lm-studio') {
+          const lmStudio = await getLmStudioStatus();
+          const models = lmStudioChatModels(lmStudio.models);
+          if (!models.includes(body.model)) return sendJson(res, 400, { error: 'That model is not currently loaded in LM Studio.' });
+          activeProvider.model = body.model;
+          return sendJson(res, 200, { ok: true, model: body.model });
+        }
         const result = await jcodeService.setModel(sessionId, body.model);
         return sendJson(res, 200, result);
       }
@@ -336,6 +430,10 @@ const server = http.createServer(async (req, res) => {
     // API: Set API Key
     if (method === 'POST' && pathname === '/api/config/api-key') {
       const body = await parseJsonBody(req);
+      if (body.provider === 'groq') {
+        const verification = await verifyGroqKey(body.apiKey);
+        if (!verification.ok) return sendJson(res, 400, { error: verification.error });
+      }
       const result = await jcodeService.setApiKey(body.provider, body.apiKey);
       return sendJson(res, 200, result);
     }

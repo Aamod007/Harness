@@ -86,9 +86,10 @@
                         <select id="model-select" class="settings-select">
                             <option value="">Detecting models...</option>
                         </select>
+                        <p id="model-switch-status" class="provider-status"></p>
                     </div>
                     <div class="settings-field">
-                        <label for="provider-input">Credential Provider</label>
+                        <label for="provider-input">Active Provider</label>
                         <select id="provider-input" class="settings-select">
                             <option value="groq">Groq API</option>
                             <option value="openai-compatible">LM Studio / OpenAI-compatible</option>
@@ -97,7 +98,7 @@
                     <div class="settings-field">
                         <label for="api-key-input">Groq API Key</label>
                         <input id="api-key-input" type="password" class="settings-input" placeholder="gsk_… (saved by the local runtime)">
-                        <button type="button" id="save-api-key-button" class="settings-action-btn">Save Key</button>
+                        <button type="button" id="save-api-key-button" class="settings-action-btn">Validate &amp; Save Key</button>
                     </div>
                     <div class="settings-field lm-studio-field">
                         <label>LM Studio Local Server</label>

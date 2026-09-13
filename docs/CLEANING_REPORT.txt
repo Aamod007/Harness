@@ -3,7 +3,7 @@
 **Datathon Track:** Track 2 — Cybersecurity (Zero-Trust Telemetry & Insider Threat Logs)  
 **Evaluation Gates:** Gate 1 (Compliance & Sanity Check) & Gate 2 (Data Rescue & Heuristics)  
 **Integrity Digest (SHA-256):** `eb7fc0c7c83d6d28a42ec52a0e9a5b3c002b41423bb2a325311800e10176fb54`  
-**Generated At:** `2026-09-13 18:46:40 UTC`  
+**Generated At:** `2026-09-13 19:00:22 UTC`  
 
 ---
 
