@@ -322,6 +322,9 @@ html[data-theme="dark"] [role="treeitem"]:focus-visible { outline-color: var(--f
 .settings-select, .settings-input { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--canvas-light); color: var(--ink); font-size: 11px; font-family: var(--sans); }
 .settings-action-btn { margin-top: 4px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--canvas); color: var(--ink); font: 10px var(--mono); cursor: pointer; text-align: center; }
 .settings-action-btn:hover { background: var(--canvas-light); border-color: var(--ink); }
+.provider-status { margin: 0; font: 10px/1.35 var(--mono); color: var(--muted); }
+.provider-status.ready { color: #1d7a4c; }
+.provider-status.warning { color: var(--orange-dark); }
 
 /* Stream Card & Text */
 .stream-card { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas-light); box-shadow: 0 4px 16px rgba(0,0,0,0.03); max-width: 820px; width: 100%; }

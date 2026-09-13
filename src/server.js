@@ -26,6 +26,7 @@ const PYTHON_BIN = process.env.PYTHON_PATH || 'python';
 const MAX_PAYLOAD_BYTES = parseInt(process.env.MAX_PAYLOAD_BYTES || '', 10) || 5 * 1024 * 1024;
 const DEFAULT_ANALYTICS_QUERY = process.env.DEFAULT_ANALYTICS_QUERY || 'Show the trend of failed login attempts by department over the last 7 days.';
 const UI_DIR = path.join(PROJECT_ROOT, 'client');
+const LM_STUDIO_BASE_URL = (process.env.LM_STUDIO_BASE_URL || 'http://127.0.0.1:1234/v1').replace(/\/$/, '');
 
 process.on('uncaughtException', (err) => {
   console.error('[server uncaughtException]:', err);
@@ -51,6 +52,27 @@ function sendJson(res, statusCode, data) {
     'Access-Control-Allow-Origin': '*',
   });
   res.end(JSON.stringify(data));
+}
+
+async function getLmStudioStatus() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3500);
+  try {
+    const response = await fetch(`${LM_STUDIO_BASE_URL}/models`, { signal: controller.signal });
+    if (!response.ok) {
+      return { configured: true, online: false, endpoint: LM_STUDIO_BASE_URL, message: `LM Studio returned HTTP ${response.status}.` };
+    }
+    const payload = await response.json();
+    const models = Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : [];
+    return { configured: true, online: true, endpoint: LM_STUDIO_BASE_URL, models: models.map((model) => model.id || model.name).filter(Boolean) };
+  } catch (error) {
+    const message = error.name === 'AbortError'
+      ? 'Timed out. In LM Studio, start the Local Server and load a model.'
+      : 'Unavailable. In LM Studio, start the Local Server and load a model.';
+    return { configured: true, online: false, endpoint: LM_STUDIO_BASE_URL, message };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function parseJsonBody(req) {
@@ -163,7 +185,11 @@ const server = http.createServer(async (req, res) => {
     // API: System & JCode Runtime Status
     if (method === 'GET' && pathname === '/api/status') {
       const status = await jcodeService.getStatus();
-      return sendJson(res, 200, status);
+      return sendJson(res, 200, { ...status, lm_studio: await getLmStudioStatus() });
+    }
+
+    if (method === 'GET' && pathname === '/api/providers/lm-studio/status') {
+      return sendJson(res, 200, await getLmStudioStatus());
     }
 
     // API: List Sessions

@@ -67,6 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const providerInput = $('#provider-input');
     const apiKeyInput = $('#api-key-input');
     const saveApiKeyButton = $('#save-api-key-button');
+    const lmStudioStatus = $('#lm-studio-status');
+    const checkLmStudioButton = $('#check-lm-studio-button');
     const fileUploadInput = $('#file-upload-input');
     const composerContext = $('#composer-context');
     const attachedFilesPreview = $('#attached-files-preview');
@@ -956,8 +958,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function saveApiKey() {
-        const provider = providerInput.value.trim() || 'openai-compatible';
+        const provider = providerInput.value || 'groq';
         const apiKey = apiKeyInput.value.trim();
+        if (provider !== 'groq') return showToast('LM Studio uses its local server; no API key is needed.');
         if (!apiKey) return showToast('Please enter an API key.');
         showLoading();
         try {
@@ -969,6 +972,24 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast(`Failed saving key: ${err.message}`);
         } finally {
             hideLoading();
+        }
+    }
+
+    async function refreshLmStudioStatus() {
+        if (!lmStudioStatus) return;
+        lmStudioStatus.textContent = 'Checking local server…';
+        try {
+            const result = await api('GET', '/api/providers/lm-studio/status');
+            if (result.online) {
+                lmStudioStatus.textContent = result.models?.length ? `Ready — ${result.models.join(', ')}` : 'Ready — no model listed.';
+                lmStudioStatus.className = 'provider-status ready';
+            } else {
+                lmStudioStatus.textContent = result.message || 'Local server is not running.';
+                lmStudioStatus.className = 'provider-status warning';
+            }
+        } catch (_) {
+            lmStudioStatus.textContent = 'Could not check the local server.';
+            lmStudioStatus.className = 'provider-status warning';
         }
     }
 
@@ -1200,6 +1221,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (harnessElem && state.status.provider) {
             harnessElem.textContent = `${state.status.provider} (${state.status.model || 'default'})`;
         }
+        if (providerInput && state.status.provider === 'openai-compatible') {
+            providerInput.value = 'openai-compatible';
+        }
+        if (state.status.lm_studio && lmStudioStatus) {
+            const lmStudio = state.status.lm_studio;
+            lmStudioStatus.textContent = lmStudio.online
+                ? `Ready — ${(lmStudio.models || []).join(', ') || 'model available'}`
+                : (lmStudio.message || 'Local server is not running.');
+            lmStudioStatus.className = `provider-status ${lmStudio.online ? 'ready' : 'warning'}`;
+        }
         renderLibrarySidebar();
     }
 
@@ -1256,6 +1287,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelButton.addEventListener('click', cancelActiveRun);
     modelSelect.addEventListener('change', (e) => switchModel(e.target.value));
     saveApiKeyButton.addEventListener('click', saveApiKey);
+    checkLmStudioButton.addEventListener('click', refreshLmStudioStatus);
 
     let currentRecords = [];
 

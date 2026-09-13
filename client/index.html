@@ -88,13 +88,21 @@
                         </select>
                     </div>
                     <div class="settings-field">
-                        <label for="provider-input">Provider</label>
-                        <input id="provider-input" type="text" class="settings-input" value="openai-compatible" placeholder="openai-compatible, gemini, claude...">
+                        <label for="provider-input">Credential Provider</label>
+                        <select id="provider-input" class="settings-select">
+                            <option value="groq">Groq API</option>
+                            <option value="openai-compatible">LM Studio / OpenAI-compatible</option>
+                        </select>
                     </div>
                     <div class="settings-field">
-                        <label for="api-key-input">API Key</label>
-                        <input id="api-key-input" type="password" class="settings-input" placeholder="Enter API key...">
+                        <label for="api-key-input">Groq API Key</label>
+                        <input id="api-key-input" type="password" class="settings-input" placeholder="gsk_… (saved by the local runtime)">
                         <button type="button" id="save-api-key-button" class="settings-action-btn">Save Key</button>
+                    </div>
+                    <div class="settings-field lm-studio-field">
+                        <label>LM Studio Local Server</label>
+                        <p id="lm-studio-status" class="provider-status">Checking http://127.0.0.1:1234/v1…</p>
+                        <button type="button" id="check-lm-studio-button" class="settings-action-btn">Check Local Server</button>
                     </div>
                     <p class="settings-section-label">WORKSPACE</p>
                     <button type="button" id="run-pipeline-button">Run cleaning pipeline</button>
