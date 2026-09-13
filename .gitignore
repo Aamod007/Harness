@@ -6,8 +6,6 @@ __pycache__/
 # Dependencies
 node_modules/
 
-# Vendored third-party runtimes (contains embedded credentials)
-vendor/jcode/
 
 # Build targets and binaries
 target/
