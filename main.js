@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from 'electron';
-import './src/server.js';
+import './server.js';
 
 const PORT = process.env.PORT || 8080;
 

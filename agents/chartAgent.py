@@ -35,6 +35,14 @@ class TextToChartAgent:
 
     def route_and_execute(self, query: str) -> Dict[str, Any]:
         start_time = time.time()
+        upper_q = query.upper()
+        if any(kw in upper_q for kw in ("DROP TABLE", "DELETE FROM", "INSERT INTO", "ALTER TABLE", "TRUNCATE", "ATTACH")):
+            return {
+                "status": "ERROR",
+                "error": "Security Policy Violation: Destructive mutations prohibited on telemetry database.",
+                "execution_time_ms": round((time.time() - start_time) * 1000, 2)
+            }
+
         con = self.get_connection()
         q = query.lower().strip()
 

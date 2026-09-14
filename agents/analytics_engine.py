@@ -26,6 +26,79 @@ HIGH_RISK_THRESHOLD = float(os.getenv("HIGH_RISK_THRESHOLD", "60.0"))
 FAIL_RATE_DANGER_THRESHOLD = float(os.getenv("FAIL_RATE_DANGER_THRESHOLD", "25.0"))
 THREAT_RISK_DANGER_THRESHOLD = float(os.getenv("THREAT_RISK_DANGER_THRESHOLD", "50.0"))
 
+def _build_parameterized_filters(
+    department: Optional[str] = None,
+    host: Optional[str] = None,
+    severity: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build parameterized WHERE clauses for each data domain.
+
+    Returns a dict with keys 'iam', 'fw', 'edr', 'unif', each containing:
+      - 'clause': the SQL WHERE clause string with ? placeholders
+      - 'params': list of parameter values
+    """
+    iam_conds: List[str] = []
+    iam_params: List[Any] = []
+    fw_conds: List[str] = []
+    fw_params: List[Any] = []
+    edr_conds: List[str] = []
+    edr_params: List[Any] = []
+    unif_conds: List[str] = []
+    unif_params: List[Any] = []
+
+    if department and department.lower() != "all":
+        iam_conds.append("department = ?")
+        iam_params.append(department)
+        unif_conds.append("department = ?")
+        unif_params.append(department)
+
+    if host and host.strip():
+        host_pattern = "%" + host.strip().upper() + "%"
+        iam_conds.append("hostname LIKE ?")
+        iam_params.append(host_pattern)
+        fw_conds.append("hostname LIKE ?")
+        fw_params.append(host_pattern)
+        edr_conds.append("hostname LIKE ?")
+        edr_params.append(host_pattern)
+        unif_conds.append("hostname LIKE ?")
+        unif_params.append(host_pattern)
+
+    if severity and severity.lower() != "all":
+        edr_conds.append("severity = ?")
+        edr_params.append(severity.strip().upper())
+
+    if start_date and start_date.strip():
+        sd = start_date.strip()
+        iam_conds.append("date >= ?")
+        iam_params.append(sd)
+        fw_conds.append("date >= ?")
+        fw_params.append(sd)
+        edr_conds.append("date >= ?")
+        edr_params.append(sd)
+
+    if end_date and end_date.strip():
+        ed = end_date.strip()
+        iam_conds.append("date <= ?")
+        iam_params.append(ed)
+        fw_conds.append("date <= ?")
+        fw_params.append(ed)
+        edr_conds.append("date <= ?")
+        edr_params.append(ed)
+
+    def _make(conds: List[str], params: List[Any]) -> Dict[str, Any]:
+        clause = ("WHERE " + " AND ".join(conds)) if conds else ""
+        return {"clause": clause, "params": list(params)}
+
+    return {
+        "iam": _make(iam_conds, iam_params),
+        "fw": _make(fw_conds, fw_params),
+        "edr": _make(edr_conds, edr_params),
+        "unif": _make(unif_conds, unif_params),
+    }
+
+
 def get_dashboard_metrics(
     department: Optional[str] = None,
     host: Optional[str] = None,
@@ -39,44 +112,12 @@ def get_dashboard_metrics(
 
     con = duckdb.connect(str(DB_PATH), read_only=True)
 
-    # Base WHERE clauses
-    iam_where = []
-    fw_where = []
-    edr_where = []
-    unif_where = []
-
-    if department and department.lower() != "all":
-        d_esc = department.replace("'", "''")
-        iam_where.append(f"department = '{d_esc}'")
-        unif_where.append(f"department = '{d_esc}'")
-
-    if host and host.strip():
-        h_esc = host.strip().upper().replace("'", "''")
-        iam_where.append(f"hostname LIKE '%{h_esc}%'")
-        fw_where.append(f"hostname LIKE '%{h_esc}%'")
-        edr_where.append(f"hostname LIKE '%{h_esc}%'")
-        unif_where.append(f"hostname LIKE '%{h_esc}%'")
-
-    if severity and severity.lower() != "all":
-        s_esc = severity.strip().upper().replace("'", "''")
-        edr_where.append(f"severity = '{s_esc}'")
-
-    if start_date and start_date.strip():
-        sd = start_date.strip()
-        iam_where.append(f"date >= '{sd}'")
-        fw_where.append(f"date >= '{sd}'")
-        edr_where.append(f"date >= '{sd}'")
-
-    if end_date and end_date.strip():
-        ed = end_date.strip()
-        iam_where.append(f"date <= '{ed}'")
-        fw_where.append(f"date <= '{ed}'")
-        edr_where.append(f"date <= '{ed}'")
-
-    iam_clause = ("WHERE " + " AND ".join(iam_where)) if iam_where else ""
-    fw_clause = ("WHERE " + " AND ".join(fw_where)) if fw_where else ""
-    edr_clause = ("WHERE " + " AND ".join(edr_where)) if edr_where else ""
-    unif_clause = ("WHERE " + " AND ".join(unif_where)) if unif_where else ""
+    # CSO-001 fix: Build parameterized WHERE clauses — no string interpolation of user input
+    filters = _build_parameterized_filters(department, host, severity, start_date, end_date)
+    iam = filters["iam"]
+    fw = filters["fw"]
+    edr = filters["edr"]
+    unif = filters["unif"]
 
     # =========================================================================
     # 1. KPI Cards Computation (with Surfaced Formulas)
@@ -88,8 +129,8 @@ def get_dashboard_metrics(
             COUNT(*) AS total_logins,
             SUM(failed_logins) AS failed_logins,
             ROUND(AVG(risk_score), 1) AS mean_risk
-        FROM logins {iam_clause}
-    """).fetchone()
+        FROM logins {iam["clause"]}
+    """, iam["params"]).fetchone()
 
     total_logins = int(iam_stats[0] or 0)
     failed_logins = int(iam_stats[1] or 0)
@@ -102,8 +143,8 @@ def get_dashboard_metrics(
             SUM(CASE WHEN action = 'DENY' THEN 1 ELSE 0 END) AS denies,
             SUM(threat_flag) AS threat_flags,
             ROUND(SUM(bytes_transferred) / (1024.0 * 1024.0), 2) AS total_mb
-        FROM firewall_logs {fw_clause}
-    """).fetchone()
+        FROM firewall_logs {fw["clause"]}
+    """, fw["params"]).fetchone()
 
     total_packets = int(fw_stats[0] or 0)
     firewall_denies = int(fw_stats[1] or 0)
@@ -116,8 +157,8 @@ def get_dashboard_metrics(
             SUM(CASE WHEN severity = 'CRITICAL' THEN 1 ELSE 0 END) AS critical_alerts,
             SUM(CASE WHEN severity = 'HIGH' THEN 1 ELSE 0 END) AS high_alerts,
             SUM(impossible_resolution) AS impossible_resolutions
-        FROM endpoint_alerts {edr_clause}
-    """).fetchone()
+        FROM endpoint_alerts {edr["clause"]}
+    """, edr["params"]).fetchone()
 
     total_alerts = int(edr_stats[0] or 0)
     critical_alerts = int(edr_stats[1] or 0)
@@ -128,10 +169,10 @@ def get_dashboard_metrics(
         SELECT
             ROUND(AVG(composite_threat_risk), 1) AS mean_threat_risk,
             ROUND(AVG(insider_threat_score), 1) AS mean_insider_score,
-            COUNT(DISTINCT CASE WHEN composite_threat_risk > {HIGH_RISK_THRESHOLD} THEN user_id ELSE NULL END) AS high_risk_accounts,
+            COUNT(DISTINCT CASE WHEN composite_threat_risk > ? THEN user_id ELSE NULL END) AS high_risk_accounts,
             COUNT(DISTINCT user_id) AS total_users
-        FROM unified_telemetry {unif_clause}
-    """).fetchone()
+        FROM unified_telemetry {unif["clause"]}
+    """, [HIGH_RISK_THRESHOLD] + unif["params"]).fetchone()
 
     mean_threat_risk = float(unif_stats[0] or 0.0)
     mean_insider_score = float(unif_stats[1] or 0.0)
@@ -205,10 +246,10 @@ def get_dashboard_metrics(
             COUNT(*) AS total_attempts,
             SUM(failed_logins) AS failed_attempts
         FROM logins
-        {iam_clause}
+        {iam["clause"]}
         GROUP BY date, department
         ORDER BY date ASC, department ASC
-    """).df()
+    """, iam["params"]).df()
 
     trend_traces = []
     palette = [
@@ -246,10 +287,10 @@ def get_dashboard_metrics(
     fw_proto_df = con.execute(f"""
         SELECT protocol, action, COUNT(*) AS packet_count
         FROM firewall_logs
-        {fw_clause}
+        {fw["clause"]}
         GROUP BY protocol, action
         ORDER BY protocol, action
-    """).df()
+    """, fw["params"]).df()
 
     fw_traces = []
     for act, color in [("ALLOW", "#39d353"), ("DENY", "#f85149")]:
@@ -281,10 +322,10 @@ def get_dashboard_metrics(
     edr_sev_df = con.execute(f"""
         SELECT severity, COUNT(*) AS count
         FROM endpoint_alerts
-        {edr_clause}
+        {edr["clause"]}
         GROUP BY severity
         ORDER BY CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END
-    """).df()
+    """, edr["params"]).df()
 
     sev_colors = {"CRITICAL": "#f85149", "HIGH": "#ff7b72", "MEDIUM": "#d29922", "LOW": "#58a6ff"}
     chart_severity = {
@@ -326,10 +367,10 @@ def get_dashboard_metrics(
             risk_score,
             'LOGGED' AS status
         FROM logins
-        {iam_clause}
+        {iam["clause"]}
         ORDER BY timestamp DESC
-        LIMIT {limit}
-    """).df()
+        LIMIT ?
+    """, iam["params"] + [limit]).df()
 
     records = records_df.to_dict(orient="records")
 

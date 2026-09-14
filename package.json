@@ -7,9 +7,8 @@
   "scripts": {
     "start": "electron .",
     "electron": "electron .",
-    "web": "node src/server.js",
-    "dev": "electron .",
-    "pipeline": "python agents/pipeline.py"
+    "web": "node server.js",
+    "dev": "electron ."
   },
   "keywords": [
     "jcode",
